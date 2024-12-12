@@ -26,9 +26,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Value("${ALLOWED_ORIGINS:}")
     private String[] allowedOrigins;
 
-    @Value("${spring.profiles.active}")
-    private String profile;
-
     // Configure message broker
     @Override
     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
@@ -42,20 +39,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     // Register STOMP endpoints
     @Override
     public void registerStompEndpoints(@NonNull StompEndpointRegistry registry) {
-        // if (profile.equals("local")) {
-            // Register the /ws endpoint, enabling SockJS fallback options
-            registry.addEndpoint("/ws")
-                    .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for
-                    // CORS
-                    .withSockJS(); // Use SockJS for fallback options
-        // }
-        // if (profile.equals("prod")) {
-        //     // Register the /wss endpoint, enabling SockJS fallback options
-        //     registry.addEndpoint("/wss")
-        //             .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for
-        //             // CORS
-        //             .withSockJS(); // Use SockJS for fallback options
-        // }
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for CORS
+                .withSockJS(); // Use SockJS for fallback options
     }
 
     @Override

@@ -5,6 +5,7 @@ import com.game.service.GameService.JoinRoomResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.handler.annotation.*;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.user.SimpUser;
@@ -33,6 +34,9 @@ public class GameController {
 
     @Autowired
     private SimpUserRegistry simpUserRegistry;
+
+    @Value("${spring.profiles.active}")
+    private String activeProfile;
 
     @MessageMapping("/createRoom")
     public void createRoom(@Payload Map<String, Object> payload, Principal principal) {
@@ -131,7 +135,8 @@ public class GameController {
                 .stream()
                 .map(SimpUser::getName)
                 .collect(Collectors.toList()).size();
-        logger.info("Broadcasting active players : {}", activePlayers);
+        if (activeProfile.equals("local"))
+            logger.info("Broadcasting active players : {}", activePlayers);
         messagingTemplate.convertAndSend("/topic/public",
                 Map.of("type", "active_players", "activePlayers", activePlayers));
     }
