@@ -40,7 +40,9 @@ const Username = styled.span`
 const Header = ({ username }) => {
     return (
         <HeaderContainer>
-            <Title>tic tac two</Title>
+            <a href="/" style={{ textDecoration: 'none', color: theme.colors.text }}>
+                <Title>tic tac two</Title>
+            </a>
             <Username>hello {username}</Username>
         </HeaderContainer>
     );
