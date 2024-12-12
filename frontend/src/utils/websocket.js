@@ -25,7 +25,9 @@ class WebSocketService {
       heartbeatIncoming: 2000,
       heartbeatOutgoing: 2000,
       webSocketFactory: () => {
-        const socket = new SockJS(`http://localhost:8080/ws?username=${this.username}`); // Update with backend URL
+        const isProd = process.env.NODE_ENV === 'production';
+        const url = `${isProd ? "https" : "http"}://localhost:8080/ws?username=${this.username}`;
+        const socket = new SockJS(url); // Update with backend URL
         socket.onopen = () => console.log('SockJS connection open');
         return socket;
       }, // Update with backend URL

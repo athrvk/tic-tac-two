@@ -3,6 +3,7 @@ package com.game.config;
 import java.security.Principal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
 import org.springframework.messaging.Message;
@@ -22,11 +23,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @SuppressWarnings("unused")
     private static final Logger logger = LoggerFactory.getLogger(WebSocketConfig.class);
 
+    @Value("${ALLOWED_ORIGINS:}")
+    private String[] allowedOrigins;
+
+    @Value("${spring.profiles.active}")
+    private String profile;
+
     // Configure message broker
     @Override
     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
-        // Enable a simple memory-based message broker to carry the messages back to the
-        // client on destinations prefixed with /topic
+        // Enable a simple memory-based message broker to carry the messages back to the client
         config.enableSimpleBroker("/topic", "/queue"); // Enable "/topic" and "/queue" for message brokers
         // Set the prefix for messages that are bound for methods annotated with @MessageMapping
         config.setApplicationDestinationPrefixes("/app"); // Prefix for endpoints
@@ -36,10 +42,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     // Register STOMP endpoints
     @Override
     public void registerStompEndpoints(@NonNull StompEndpointRegistry registry) {
-        // Register the /ws endpoint, enabling SockJS fallback options
-        registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*") // Allow all origins for simplicity, Adjust as needed for CORS
-                .withSockJS(); // Use SockJS for fallback options
+        // if (profile.equals("local")) {
+            // Register the /ws endpoint, enabling SockJS fallback options
+            registry.addEndpoint("/ws")
+                    .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for
+                    // CORS
+                    .withSockJS(); // Use SockJS for fallback options
+        // }
+        // if (profile.equals("prod")) {
+        //     // Register the /wss endpoint, enabling SockJS fallback options
+        //     registry.addEndpoint("/wss")
+        //             .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for
+        //             // CORS
+        //             .withSockJS(); // Use SockJS for fallback options
+        // }
     }
 
     @Override

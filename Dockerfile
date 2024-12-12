@@ -22,4 +22,4 @@ FROM openjdk:17-slim
 WORKDIR /app
 COPY --from=backend-build /app/backend/target/*.jar ./app.jar
 EXPOSE 10000
-CMD ["java", "-jar", "app.jar"]
+CMD ["java", "-jar", "app.jar", "-Dspring.profiles.active=prod"]
