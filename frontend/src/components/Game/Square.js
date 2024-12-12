@@ -3,9 +3,8 @@ import styled from 'styled-components';
 
 const StyledSquare = styled.button`
   width: 100%;
-  height: 100%;
   position: relative;
-  aspect-ratio: 1;
+  padding-top: 100%; // Creates a square
   border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
   background: none;
   font-size: 2rem;
@@ -16,24 +15,23 @@ const StyledSquare = styled.button`
     props.theme.colors.primary : 
     props.theme.colors.secondary
   };
-  & > * {
+
+  // Content container
+  .square-content {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: inherit;
   }
 
   &:hover:not(:disabled) {
     background-color: ${({ theme }) => theme.colors.hover};
     transform: scale(1.02);
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    &:hover:not(:disabled) {
-      background-color: ${({ theme }) => theme.colors.hover};
-      transform: scale(1.02);
-    }
   }
 
   @media (max-width: 768px) {
@@ -49,7 +47,9 @@ const Square = ({ value, onClick, disabled, isWinning }) => (
     isWinning={isWinning}
     style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
   >
+    <div className="square-content">
     {value}
+    </div>
   </StyledSquare>
 );
 
