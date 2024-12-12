@@ -3,7 +3,9 @@ import styled from 'styled-components';
 
 const StyledSquare = styled.button`
   width: 100%;
-  height: 100%;
+  height: 0;
+  padding-top: 100%;
+  position: relative;
   aspect-ratio: 1;
   border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
   background: none;
@@ -15,7 +17,15 @@ const StyledSquare = styled.button`
     props.theme.colors.primary : 
     props.theme.colors.secondary
   };
-  transform: ${props => props.isWinning ? 'scale(1.05)' : 'scale(1)'};
+  & > * {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  &:hover:not(:disabled) {
 
   &:hover:not(:disabled) {
     background-color: ${({ theme }) => theme.colors.hover};
