@@ -3,8 +3,7 @@ import styled from 'styled-components';
 
 const StyledSquare = styled.button`
   width: 100%;
-  height: 0;
-  padding-top: 100%;
+  height: 100%;
   position: relative;
   aspect-ratio: 1;
   border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
@@ -26,10 +25,15 @@ const StyledSquare = styled.button`
   }
 
   &:hover:not(:disabled) {
-
-  &:hover:not(:disabled) {
     background-color: ${({ theme }) => theme.colors.hover};
     transform: scale(1.02);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover:not(:disabled) {
+      background-color: ${({ theme }) => theme.colors.hover};
+      transform: scale(1.02);
+    }
   }
 
   @media (max-width: 768px) {
