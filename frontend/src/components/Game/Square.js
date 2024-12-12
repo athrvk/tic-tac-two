@@ -3,6 +3,7 @@ import styled from 'styled-components';
 
 const StyledSquare = styled.button`
   width: 100%;
+  height: 100%;
   aspect-ratio: 1;
   border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
   background: none;
@@ -14,7 +15,6 @@ const StyledSquare = styled.button`
     props.theme.colors.primary : 
     props.theme.colors.secondary
   };
-  background: 'none';
   transform: ${props => props.isWinning ? 'scale(1.05)' : 'scale(1)'};
 
   &:hover:not(:disabled) {
