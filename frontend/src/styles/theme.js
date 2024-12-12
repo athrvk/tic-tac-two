@@ -2,7 +2,7 @@
 export const theme = {
     colors: {
         primary: '#000000', // Black for high contrast
-        secondary: '#d1d1d1', // Darker gray for differentiation from primary color
+        secondary: '#8a8a8a', // Even darker gray for better differentiation from primary color
         background: '#f6f6f6', // Light gray background for Kindle Paperwhite compatibility
         text: '#000000', // Black text for high contrast
         darkText: '#393939',
