@@ -6,14 +6,14 @@ const StyledSquare = styled.button`
   position: relative;
   padding-top: 100%; // Creates a square
   border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
-  background: none;
+  background: ${(props) => props.value === 'O' ? props.theme.colors.darkBackground :  "none"};
   font-size: 2rem;
   font-weight: bold;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   transition: transform 0.2s ease, background-color 0.2s ease;
   color: ${props => props.value === 'X' ? 
     props.theme.colors.primary : 
-    props.theme.colors.secondary
+    props.theme.colors.lightGray
   };
 
   // Content container
