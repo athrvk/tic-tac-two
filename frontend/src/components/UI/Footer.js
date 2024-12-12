@@ -10,7 +10,7 @@ const FooterContainer = styled.footer`
     color: ${theme.colors.text};
     padding: ${theme.spacing.md};
     display: flex;
-    justify-content: center;
+    justify-content: space-around;
     align-items: center;
     flex-wrap: wrap;
     @media (max-width: 768px) {
