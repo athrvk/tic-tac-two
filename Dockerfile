@@ -15,7 +15,7 @@ WORKDIR /app/backend
 COPY --from=frontend-build /app/frontend/build ./src/main/resources/static
 COPY backend/pom.xml .
 COPY backend/src ./src
-RUN mvn clean package 
+RUN mvn -B package 
 
 # Final image
 FROM openjdk:17-slim
