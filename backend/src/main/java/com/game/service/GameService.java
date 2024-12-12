@@ -108,6 +108,11 @@ public class GameService {
         }
     }
 
+    public boolean isRoomFull(String roomId) {
+        GameState state = rooms.get(roomId);
+        return state != null && state.getPlayers() == 2;
+    }
+
     /**
      * Retrieves the list of rooms with 0 or just 1 player.
      *

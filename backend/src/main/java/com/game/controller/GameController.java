@@ -73,6 +73,7 @@ public class GameController {
         JoinRoomResponse response = gameService.joinRoom(desiredRoomId, username);
         String assignedRoomId = response.getRoomId();
         String playerSymbol = response.getPlayerSymbol();
+        boolean isRoomFull = gameService.isRoomFull(assignedRoomId);
 
         if (assignedRoomId.equals(desiredRoomId)) {
             // Successfully joined the desired room
@@ -91,10 +92,11 @@ public class GameController {
                         "playerSymbol", playerSymbol,
                         "squares", gameService.getSquares(assignedRoomId),
                         "history", gameService.getHistory(assignedRoomId),
-                        "xIsNext", gameService.isXIsNext(assignedRoomId)));
+                        "xIsNext", gameService.isXIsNext(assignedRoomId),
+                        "isRoomFull", isRoomFull));
         // Notify other players in the room
         messagingTemplate.convertAndSend("/topic/room/" + assignedRoomId,
-                Map.of("type", "player_joined", "roomId", assignedRoomId));
+                Map.of("type", "player_joined", "roomId", assignedRoomId, "isRoomFull", isRoomFull));
     }
 
     /**

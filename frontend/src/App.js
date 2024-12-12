@@ -27,6 +27,7 @@ function App() {
   const [playerSymbol, setPlayerSymbol] = useState('');
   const [username] = useState(generateUsername("-", 0, 16));
   const [gameWinner, setGameWinner] = useState(null);
+  const [isRoomFull, setIsRoomFull] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const isCreatingRoomRef = useRef(isCreatingRoom);
 
@@ -78,6 +79,7 @@ function App() {
       setSquares(data.squares);
       setHistory(data.history);
       setXIsNext(data.xIsNext);
+      setIsRoomFull(data.isRoomFull);
       setMessage(`joined room: ${data.roomId}`);
       setTimeout(() => setMessage(''), 4000);
       setIsCreatingRoom(false);
@@ -90,6 +92,9 @@ function App() {
       setHistory(data.gameState.history);
       setXIsNext(data.gameState.xIsNext);
       setGameWinner(calculateWinner(data.gameState.squares));
+    }
+    if (data.type === 'player_joined' && data.roomId === roomId) {
+      setIsRoomFull(data.isRoomFull);
     }
   };
 
@@ -184,24 +189,32 @@ function App() {
               <Button onClick={handleJoinRoom}>play online</Button>
             </Controls>
           ) : (
-            <>
-              <GameInfo>
-                you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span> in room:
-                <br />
-                <span>{roomId}</span>
-              </GameInfo>
-              <Board
-                squares={squares}
-                onSquareClick={handleSquareClick}
-                disabled={!!gameWinner}
-                winners={gameWinner && gameWinner.line}
-                winningLine={null}
-              />
-              <TurnInfo>
-                {gameWinner
-                  ? `winner: ${gameWinner.winner === playerSymbol ? 'you' : gameWinner.winner}`
-                  : `it's ${xIsNext ? 'X' : 'O'}'s turn!`}
-              </TurnInfo>
+              <>
+                {!isRoomFull ? (
+                  <GameInfo>
+                    waiting for other player to join...
+                  </GameInfo>
+                ) : (
+                  <>
+                      <GameInfo>
+                        you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span> in room:
+                        <br />
+                        <span>{roomId}</span>
+                      </GameInfo>
+                      <Board
+                        squares={squares}
+                        onSquareClick={handleSquareClick}
+                        disabled={!!gameWinner}
+                        winners={gameWinner && gameWinner.line}
+                        winningLine={null}
+                      />
+                      <TurnInfo>
+                        {gameWinner
+                          ? `winner: ${gameWinner.winner === playerSymbol ? 'you' : gameWinner.winner}`
+                          : `it's ${xIsNext ? 'X' : 'O'}'s turn!`}
+                      </TurnInfo>
+                  </>
+                )}
               {gameWinner && (
                 <Button onClick={handleNewGame}>new game</Button>
               )}
