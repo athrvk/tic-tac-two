@@ -1,21 +1,16 @@
-# Java build output
-target/
+# Ignore files in the backend folder
+backend/target/
+backend/src/main/resources/static/
 
-# Ignore node_modules directory
-node_modules/
+# Ignore files in the frontend folder
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/coverage/
 
 # Ignore log files
 *.log
-
-# Ignore build directories
-dist/
-build/
-
-# Ignore environment variable files
-.env
-
-# Ignore coverage reports
-coverage/
 
 # Ignore OS generated files
 .DS_Store

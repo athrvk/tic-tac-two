@@ -1,15 +1,8 @@
 version: '3.8'
 services:
-  backend:
-    build: ./backend
+  app:
+    build: .
+    image: athrvk/tic-tac-two:latest
     ports:
       - "8080:8080"
-    container_name: tic-tac-two-backend
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    container_name: tic-tac-two-frontend
-    depends_on:
-      - backend
+    container_name: tic-tac-two
