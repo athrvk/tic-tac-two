@@ -31,3 +31,19 @@ jobs:
           context: .
           push: true
           tags: athrvk/tic-tac-two:latest
+    
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+        - name: Trigger deployment
+          run: |
+            RESPONSE=$(curl -s -w "%{http_code}" -X POST ${{ secrets.DEPLOY_URL }})
+            HTTP_STATUS=${RESPONSE: -3}
+            if [ $HTTP_STATUS -ne 200 ]; then
+                echo "Deployment trigger failed with status: $HTTP_STATUS"
+                exit 1
+            fi
+            echo "Deployment triggered successfully"
