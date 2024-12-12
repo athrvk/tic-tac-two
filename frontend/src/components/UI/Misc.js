@@ -8,6 +8,11 @@ export const Controls = styled.div`
   display: flex;
   flex-direction: column;
   gap: ${props => props.theme.spacing.lg};
+  @supports not (gap: ${props => props.theme.spacing.lg}) {
+    & > *:not(:last-child) {
+      margin-bottom: ${props => props.theme.spacing.lg};
+    }
+  }
 `;
 
 export const RoomControls = styled.div`
@@ -19,6 +24,11 @@ export const RoomControlsButtonGroup = styled.div`
   flex-direction: row;
   margin-top: ${props => props.theme.spacing.sm};
   gap: ${({ theme }) => theme.spacing.md};
+  @supports not (gap: ${({ theme }) => theme.spacing.md}) {
+    & > *:not(:last-child) {
+      margin-right: ${({ theme }) => theme.spacing.md};
+    }
+  }
 `;
 
 export const GameInfo = styled.div`

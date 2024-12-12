@@ -3,7 +3,9 @@ import styled from 'styled-components';
 import Square from './Square';
 
 const BoardGrid = styled.div`
+  display: -ms-grid;
   display: grid;
+  -ms-grid-columns: (1fr)[3];
   grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
   width: 100%;
