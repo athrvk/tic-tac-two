@@ -4,7 +4,7 @@ import { theme } from '../../styles/theme';
 
 const FooterContainer = styled.footer`
     background-color: ${theme.colors.lightGray};
-    position: absolute;
+    position: fixed;
     width: 100%;
     bottom: 0;
     color: ${theme.colors.text};
@@ -16,7 +16,7 @@ const FooterContainer = styled.footer`
     @media (max-width: 768px) {
         flex-direction: column;
         text-align: center;
-        padding: ${theme.spacing.sm};
+        padding: ${theme.spacing.xs};
     }
 `;
 
@@ -27,7 +27,7 @@ const FooterText = styled.p`
     margin: 0;
     @media (max-width: 768px) {
         font-size: ${theme.typography.body.fontSize};
-        margin-top: ${theme.spacing.sm};
+        margin-top: ${theme.spacing.xs};
     }
 `;
 

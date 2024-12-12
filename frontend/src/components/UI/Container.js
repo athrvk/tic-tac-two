@@ -5,6 +5,7 @@ export const Container = styled.div`
   max-height: 100vh;
   margin: 0 auto;
   padding: ${({ theme }) => theme.spacing.lg};
+  padding-bottom: 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
