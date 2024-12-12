@@ -20,6 +20,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [xIsNext, setXIsNext] = useState(true);
   const [roomId, setRoomId] = useState('');
+  // eslint-disable-next-line no-unused-vars
   const [availableRooms, setAvailableRooms] = useState([]);
   const [activePlayers, setActivePlayers] = useState(0);
   const [inputRoomId, setInputRoomId] = useState('');
@@ -95,6 +96,16 @@ function App() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
+    }
+    if (data.type === 'player_disconnected' && data.roomId === roomId) {
+      setIsRoomFull(false);
+      setSquares(initialSquares);
+      setHistory([]);
+      setXIsNext(true);
+      setGameWinner(null);
+      if (data.username !== username) {
+        setMessage('other player disconnected');
+      }
     }
   };
 

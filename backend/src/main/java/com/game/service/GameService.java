@@ -16,6 +16,8 @@ public class GameService {
 
     // Stores roomId to game state mapping
     private final Map<String, GameState> rooms = new ConcurrentHashMap<>();
+    // Stores username to roomId mapping
+    private final Map<String, String> playerRoomMap = new ConcurrentHashMap<>();
 
     /**
      * Creates a new game room with a unique ID.
@@ -41,7 +43,6 @@ public class GameService {
         return roomId;
     }
 
-    
     /**
      * Allows a user to join a game room. If the desired room ID is not provided or is empty,
      * the method will attempt to find a room with only one player and join it. If no such room
@@ -60,6 +61,7 @@ public class GameService {
                 GameState room = entry.getValue();
                 if (room.getPlayers() == 1) {
                     String symbol = room.assignSymbol(username);
+                    playerRoomMap.put(username, entry.getKey());
                     Map<String, String> playerSymbols = room.getPlayerSymbols();
                     logger.info("Players in room {}: {}", entry.getKey(), playerSymbols);
                     return new JoinRoomResponse(entry.getKey(), symbol);
@@ -69,6 +71,7 @@ public class GameService {
             String newRoomId = createRoom();
             GameState newRoom = rooms.get(newRoomId);
             String symbol = newRoom.assignSymbol(username);
+            playerRoomMap.put(username, newRoomId);
             Map<String, String> playerSymbols = newRoom.getPlayerSymbols();
             logger.info("Players in room {}: {}", newRoomId, playerSymbols);
             return new JoinRoomResponse(newRoomId, symbol);
@@ -76,6 +79,7 @@ public class GameService {
         GameState desiredRoom = rooms.get(desiredRoomId);
         if (desiredRoom != null && desiredRoom.getPlayers() < 2) {
             String symbol = desiredRoom.assignSymbol(username);
+            playerRoomMap.put(username, desiredRoomId);
             Map<String, String> playerSymbols = desiredRoom.getPlayerSymbols();
             logger.info("Players in room {}: {}", desiredRoomId, playerSymbols);
             return new JoinRoomResponse(desiredRoomId, symbol);
@@ -84,6 +88,7 @@ public class GameService {
         String newRoomId = createRoom();
         GameState newRoom = rooms.get(newRoomId);
         String symbol = newRoom.assignSymbol(username);
+        playerRoomMap.put(username, newRoomId);
         Map<String, String> playerSymbols = newRoom.getPlayerSymbols();
         logger.info("Players in room {}: {}", newRoomId, playerSymbols);
         return new JoinRoomResponse(newRoomId, symbol);
@@ -108,9 +113,45 @@ public class GameService {
         }
     }
 
+    /**
+     * Determines if a room is full (i.e. has 2 players).
+     *
+     * @param roomId the ID of the room
+     * @return true if the room is full, false otherwise
+     */
     public boolean isRoomFull(String roomId) {
         GameState state = rooms.get(roomId);
         return state != null && state.getPlayers() == 2;
+    }
+
+    /**
+     * Retrieves the room ID of a player.
+     *
+     * @param username the username of the player
+     * @return the room ID, or null if not found
+     */
+    public String getRoomOfPlayer(String username) {
+        if (username == null) {
+            return null;
+        }
+        return playerRoomMap.get(username);
+    }
+
+    /**
+     * Removes the disconnected player from the room.
+     *
+     * @param roomId the ID of the room to remove
+     */
+    public boolean removePlayerFromRoom(String roomId, String username) {
+        GameState gameState = rooms.get(roomId);
+        if (gameState != null) {
+            if (gameState.removePlayer(username)) {
+                playerRoomMap.remove(username);
+                logger.info("Removed player {} from room {}", username, roomId);
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

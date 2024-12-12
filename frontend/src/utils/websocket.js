@@ -17,6 +17,9 @@ class WebSocketService {
         username: this.username,
         // Add headers if needed
       },
+      disconnectHeaders: {
+        username: this.username,
+      },
       logRawCommunication: true, // Enable raw communication logging
       debug: (str) => {
         console.log("[STOMP DEBUG] - " + str);
@@ -78,6 +81,7 @@ class WebSocketService {
       console.log(`[/topic/room/${roomId}] - Received message:`, data);
       callback(data);
     });
+    this.roomId = roomId;
   }
 
   sendGameState(roomId, gameState) {
