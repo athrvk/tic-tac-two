@@ -4,6 +4,7 @@ import { theme } from '../../styles/theme';
 export const Input = styled.input`
     width: 100%;
     padding: ${theme.spacing.sm};
+    margin: ${theme.spacing.xs} 0;
     font-size: ${theme.typography.body.fontSize};
     font-family: ${theme.typography.fontFamily};
     border: 1px solid ${theme.colors.border};

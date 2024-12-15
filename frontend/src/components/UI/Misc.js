@@ -1,35 +1,38 @@
 import styled from "styled-components";
 
 export const Controls = styled.div`
+  width: 15rem;
   margin-left: auto;
   margin-right: auto;
   margin-top: ${props => props.theme.spacing.lg};
   margin-bottom: ${props => props.theme.spacing.md};
   display: flex;
   flex-direction: column;
-  gap: ${props => props.theme.spacing.lg};
-  & > *:not(:last-child) {
-    margin-bottom: ${props => props.theme.spacing.lg};
+
+  @media (max-width: 768px) {
+    width: calc(100vw - 20%);
+    max-width: max-content;
   }
 `;
 
 export const RoomControls = styled.div`
-  gap: ${({ theme }) => theme.spacing.md};
+  height: 10rem;
 `;
 
 export const RoomControlsButtonGroup = styled.div`
   display: flex;
   flex-direction: row;
-  margin-top: ${props => props.theme.spacing.sm};
-  gap: ${({ theme }) => theme.spacing.md};
-  & > *:not(:last-child) {
-    margin-right: ${({ theme }) => theme.spacing.md};
+  justify-content: space-between;
+  margin-top: ${props => props.theme.spacing.md};
+  margin-bottom: ${props => props.theme.spacing.sm};
+
+  @media (max-width: 512px) {
+    height: 5rem;
+    flex-direction: column;
+    justify-content: space-around;
+    margin-top: ${props => props.theme.spacing.sm};
   }
-  @supports (gap: ${({ theme }) => theme.spacing.md}) {
-    & > *:not(:last-child) {
-      margin-right: 0;
-    }
-  }
+
 `;
 
 export const GameInfo = styled.div`

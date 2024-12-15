@@ -8,7 +8,7 @@ const FooterContainer = styled.footer`
     width: 100%;
     bottom: 0;
     color: ${theme.colors.text};
-    padding: ${theme.spacing.md};
+    padding: ${theme.spacing.sm};
     display: flex;
     justify-content: space-around;
     align-items: center;
