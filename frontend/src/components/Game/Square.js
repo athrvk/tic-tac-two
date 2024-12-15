@@ -4,19 +4,14 @@ import styled from 'styled-components';
 const StyledSquare = styled.button`
   width: 100%;
   position: relative;
-  padding-top: 100%; // Creates a square
-  border: ${(props) => props.isWinning ? "4px" : "2px"} solid ${({ theme }) => theme.colors.border};
-  background: ${(props) => props.value === 'O' ? props.theme.colors.darkBackground :  "none"};
+  padding-top: 100%; /* Creates a square box */
+  border: ${(props) => (props.isWinning ? '4px' : '2px')} solid ${(props) => props.value ? props.theme.colors.mediumGray : props.theme.colors.lightGray}};
+  background: none;
   font-size: 2rem;
   font-weight: bold;
-  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
-  transition: transform 0.2s ease, background-color 0.2s ease;
-  color: ${props => props.value === 'X' ? 
-    props.theme.colors.primary : 
-    props.theme.colors.lightGray
-  };
+  cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+  color: ${({ theme }) => theme.colors.text};
 
-  // Content container
   .square-content {
     position: absolute;
     top: 0;
@@ -27,11 +22,8 @@ const StyledSquare = styled.button`
     align-items: center;
     justify-content: center;
     font-size: inherit;
-  }
 
-  &:hover:not(:disabled) {
-    background-color: ${({ theme }) => theme.colors.hover};
-    transform: scale(1.02);
+    font-style: ${(props) => (props.value === 'X' ? 'italic' : 'normal')};
   }
 
   @media (max-width: 768px) {

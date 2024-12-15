@@ -19,6 +19,7 @@ function App() {
   const [squares, setSquares] = useState(initialSquares);
   const [history, setHistory] = useState([]);
   const [xIsNext, setXIsNext] = useState(true);
+  const [disabled, setDisabled] = useState(false);
   const [roomId, setRoomId] = useState('');
   // eslint-disable-next-line no-unused-vars
   const [availableRooms, setAvailableRooms] = useState([]);
@@ -54,6 +55,13 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webSocketService.connected, roomId]);
+
+  useEffect(() => {
+    const isPlayersTurn =
+      (playerSymbol === 'X' && xIsNext) ||
+      (playerSymbol === 'O' && !xIsNext);
+    setDisabled(!isPlayersTurn);
+  }, [playerSymbol, xIsNext]);
 
   const handleReceiveMessage = (data) => {
     if (data.type === 'rooms') {
@@ -215,7 +223,7 @@ function App() {
                       <Board
                         squares={squares}
                         onSquareClick={handleSquareClick}
-                        disabled={!!gameWinner}
+                        disabled={disabled || !!gameWinner}
                         winners={gameWinner && gameWinner.line}
                         winningLine={null}
                       />
