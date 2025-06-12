@@ -6,7 +6,7 @@ on:
       - master
   pull_request:
     branches:
-      - msater
+      - master
 
 jobs:
   build-and-push:
