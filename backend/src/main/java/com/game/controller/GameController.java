@@ -128,9 +128,9 @@ public class GameController {
     // }
 
     /*
-     * Broadcast active players to all players, at every 5 seconds
+     * Broadcast active players to all players, at every 2 seconds
      */
-    @Scheduled(fixedRate = 5000)
+    @Scheduled(fixedRate = 2000)
     public void broadcastActivePlayers() {
         int activePlayers = this.simpUserRegistry
                 .getUsers()

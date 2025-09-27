@@ -112,8 +112,7 @@ function App() {
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('other player disconnected, redirecting to home');
-        setTimeout(() => setMessage(m => `${m}.`), 800);
+        setMessage('other player disconnected, redirecting to home...');
         setTimeout(() => {
           window.location.reload();
         }, 3000);
@@ -229,6 +228,13 @@ function App() {
                 {!isRoomFull ? (
                   <GameInfo>
                     waiting for other player to join...
+                    <br />
+                    {inputRoomId &&  (
+                      <span>
+                        room:&nbsp;
+                        <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
+                      </span>
+                      )}
                   </GameInfo>
                 ) : (
                   <>
