@@ -182,6 +182,19 @@ function App() {
     });
   }
 
+  const turnMessage = useMemo(() => {
+    if (gameWinner) {
+      return gameWinner.winner === playerSymbol ? 'you won!' : 'you lost!';
+    }
+    if (xIsNext && playerSymbol === 'X') {
+      return "it's your turn!";
+    }
+    if (!xIsNext && playerSymbol === 'O') {
+      return "it's your turn!";
+    }
+    return 'wait for other player to play!';
+  }, [gameWinner, playerSymbol, xIsNext]);
+
 
 
   return (
@@ -228,10 +241,7 @@ function App() {
                         winningLine={null}
                       />
                       <TurnInfo>
-                        {gameWinner
-                          ? `${gameWinner.winner === playerSymbol ? 'you won!' : 'you lost!'}`
-                          : `${xIsNext && 'X' === playerSymbol ? "it's your turn!" : 'wait for other player to play!'}`
-                        }
+                        {turnMessage}
                       </TurnInfo>
                   </>
                 )}
