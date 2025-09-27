@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Board from './components/Game/Board';
 import { ThemeProvider } from 'styled-components';
 import { webSocketService } from './utils/websocket';
