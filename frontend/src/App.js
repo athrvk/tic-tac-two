@@ -229,8 +229,9 @@ function App() {
                       />
                       <TurnInfo>
                         {gameWinner
-                          ? `winner: ${gameWinner.winner === playerSymbol ? 'you' : gameWinner.winner}`
-                          : `it's ${xIsNext ? 'X' : 'O'}'s turn!`}
+                          ? `${gameWinner.winner === playerSymbol ? 'you won!' : 'you lost!'}`
+                          : `${xIsNext ? ('X' === playerSymbol ? "it's your turn!") : 'wait for other player to play!'}`
+                        }
                       </TurnInfo>
                   </>
                 )}
