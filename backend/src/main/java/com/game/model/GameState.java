@@ -20,7 +20,7 @@ public class GameState {
         this.squares = new ArrayList<>(Collections.nCopies(9, null));
         this.history = new ArrayList<>();
         this.xIsNext = true; // X always starts
-        this.players = 1;
+        this.players = 0;
         this.playerSymbols = new HashMap<>();
         this.lock = new ReentrantLock();
     }
