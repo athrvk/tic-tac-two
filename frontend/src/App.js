@@ -123,7 +123,7 @@ function App() {
   const handleCreateRoom = (e) => {
     e.preventDefault();
     setIsCreatingRoom(true); // Set the flag before creating room
-    webSocketService.createRoom(username, inputRoomId);
+    webSocketService.createRoom(username, inputRoomId.trim());
     setMessage('creating room...');
   };
 
@@ -218,7 +218,7 @@ function App() {
                 />
                 <RoomControlsButtonGroup>
                   <Button onClick={handleCreateRoom} disabled={!inputRoomId}>create room</Button>
-                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>join room</Button>
+                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join room</Button>
                 </RoomControlsButtonGroup>
               </RoomControls>
               <Button onClick={handleJoinRoom}>play online</Button>

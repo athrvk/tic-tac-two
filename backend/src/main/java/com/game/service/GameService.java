@@ -38,8 +38,11 @@ public class GameService {
      * @return the room ID
      */
     public String createRoom(String roomId) {
+        if (rooms.containsKey(roomId)) {
+            logger.warn("Room ID {} already exists, resetting it's state", roomId);
+        }
         rooms.put(roomId, new GameState());
-        logger.info("Created new room with ID: {}", roomId);
+        logger.info("Created new room on user request with ID: {}", roomId);
         return roomId;
     }
 
@@ -56,6 +59,7 @@ public class GameService {
      */
     public JoinRoomResponse joinRoom(String desiredRoomId, String username) {
         if (desiredRoomId == null || desiredRoomId.isEmpty()) {
+            logger.info("Joining any available room for user: {}", username);
             // Try to find a room with only one player
             for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
                 GameState room = entry.getValue();
@@ -78,6 +82,7 @@ public class GameService {
         }
         GameState desiredRoom = rooms.get(desiredRoomId);
         if (desiredRoom != null && desiredRoom.getPlayers() < 2) {
+            logger.info("Joining existing room on user request with ID: {}", desiredRoomId);
             String symbol = desiredRoom.assignSymbol(username);
             playerRoomMap.put(username, desiredRoomId);
             Map<String, String> playerSymbols = desiredRoom.getPlayerSymbols();

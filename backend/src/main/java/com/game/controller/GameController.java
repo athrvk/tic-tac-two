@@ -44,7 +44,7 @@ public class GameController {
         if (requestedRoomId != null && !requestedRoomId.isEmpty()) {
             // Check if the requested room ID is already taken
             if (gameService.getRooms().contains(requestedRoomId)) {
-                logger.info("Room with ID {} already exists", requestedRoomId);
+                logger.info("Room with ID {} already exists still creating new room, no error handling for now", requestedRoomId);
                 // handle it later
             }
             // Create a room with the requested ID
@@ -77,7 +77,7 @@ public class GameController {
 
         if (assignedRoomId.equals(desiredRoomId)) {
             // Successfully joined the desired room
-            logger.info("Player {} joined room with ID: {}", username, assignedRoomId);
+            logger.info("Player {} joined room with ID: {} as requested", username, assignedRoomId);
         } else {
             // Created a new room and assigned the player to it
             logger.info("Player {} joined new room with ID: {}", username, assignedRoomId);
