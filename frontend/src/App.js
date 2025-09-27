@@ -112,7 +112,11 @@ function App() {
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('other player disconnected');
+        setMessage('other player disconnected, redirecting to home');
+        setTimeout(() => setMessage(m => `${m}.`), 800);
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
       }
     }
   };
