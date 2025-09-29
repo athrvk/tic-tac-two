@@ -92,7 +92,7 @@ function GamePage() {
     if (data.type === 'room_created' && isCreatingRoomRef.current) {
       setRoomId(data.roomId);
       webSocketService.joinRoom(data.roomId);
-      setMessage('joining room: ' + data.roomId);
+      setMessage('connecting to ' + data.roomId);
       setIsCreatingRoom(false);
     }
     if (data.type === 'active_players') {
@@ -160,7 +160,7 @@ function GamePage() {
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('other player disconnected, redirecting to home...');
+        setMessage('opponent left game, returning home...');
         
         // Track game abandonment due to disconnection
         if (gameStartTime) {
@@ -190,7 +190,7 @@ function GamePage() {
     e.preventDefault();
     // if (inputRoomId.trim() !== '') {
     webSocketService.joinRoom(inputRoomId.trim());
-    setMessage('joining room...');
+    setMessage('joining game...');
     
     // Track game start intent
     const method = inputRoomId.trim() ? 'join_room' : 'random_match';
@@ -204,7 +204,7 @@ function GamePage() {
       (playerSymbol === 'O' && !xIsNext);
 
     if (!isPlayersTurn) {
-      setMessage("it's not your turn!");
+      setMessage("wait your turn");
       setTimeout(() => setMessage(''), 4000);
       return;
     } else {
@@ -273,15 +273,15 @@ function GamePage() {
 
   const turnMessage = useMemo(() => {
     if (gameWinner) {
-      return gameWinner.winner === playerSymbol ? 'you won!' : 'you lost!';
+      return gameWinner.winner === playerSymbol ? 'you win' : 'you lose';
     }
     if (xIsNext && playerSymbol === 'X') {
-      return "it's your turn!";
+      return "your move";
     }
     if (!xIsNext && playerSymbol === 'O') {
-      return "it's your turn!";
+      return "your move";
     }
-    return 'wait for other player to play!';
+    return "opponent's turn";
   }, [gameWinner, playerSymbol, xIsNext]);
 
 
@@ -294,7 +294,7 @@ function GamePage() {
           {!roomId ? (
             <Controls>
               <RoomControls>
-                <Label>room id</Label>
+                <Label>room code</Label>
                 <Input
                   type="text"
                   placeholder={generateUsername("-", 3, 6)}
@@ -302,17 +302,17 @@ function GamePage() {
                   onChange={(e) => setInputRoomId(e.target.value)}
                 />
                 <RoomControlsButtonGroup>
-                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>create room</Button>
-                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join room</Button>
+                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
+                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join game</Button>
                 </RoomControlsButtonGroup>
               </RoomControls>
-              <Button onClick={handleJoinRoom}>play online</Button>
+              <Button onClick={handleJoinRoom}>random match</Button>
             </Controls>
           ) : (
               <>
                 {!isRoomFull ? (
                   <GameInfo>
-                    waiting for other player to join...
+                    awaiting player...
                     <br />
                     {inputRoomId &&  (
                       <span>
@@ -324,9 +324,9 @@ function GamePage() {
                 ) : (
                   <>
                       <GameInfo>
-                        you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span> in room:
+                        you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span>
                         <br />
-                        <span>{roomId}</span>
+                        room: <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
                       </GameInfo>
                       <Board
                         squares={squares}
@@ -341,14 +341,14 @@ function GamePage() {
                   </>
                 )}
               {gameWinner && (
-                <Button onClick={handleNewGame}>new game</Button>
+                <Button onClick={handleNewGame}>new match</Button>
               )}
             </>
           )}
           {message && <Message>{message}</Message>}
           {gameWinner && gameWinner.winner === playerSymbol && <Confetti />}
           <GameInfo>
-            global active players: {activePlayers}
+            players online: {activePlayers}
           </GameInfo>
         </>
       </Container>

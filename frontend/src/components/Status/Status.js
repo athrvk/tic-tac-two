@@ -94,30 +94,30 @@ function Status() {
                         {isConnected ? '● Connected' : '● Disconnected'}
                     </ConnectionStatus>
 
-                    <PageTitle>Game Status Dashboard</PageTitle>
+                    <PageTitle>game dashboard</PageTitle>
 
                     <StatsGrid>
                         <StatCard>
                             <StatValue>{totalRooms}</StatValue>
-                            <StatLabel>Total Rooms</StatLabel>
+                            <StatLabel>total rooms</StatLabel>
                         </StatCard>
                         <StatCard>
                             <StatValue>{activeGames}</StatValue>
-                            <StatLabel>Active Games</StatLabel>
+                            <StatLabel>active games</StatLabel>
                         </StatCard>
                         <StatCard>
                             <StatValue>{waitingRooms}</StatValue>
-                            <StatLabel>Waiting for Players</StatLabel>
+                            <StatLabel>open rooms</StatLabel>
                         </StatCard>
                         <StatCard>
                             <StatValue>{totalPlayers}</StatValue>
-                            <StatLabel>Total Players</StatLabel>
+                            <StatLabel>players online</StatLabel>
                         </StatCard>
                     </StatsGrid>
 
                     {rooms.length === 0 ? (
                         <EmptyState>
-                            No active rooms at the moment. Start a new game to see it here!
+                            no active games. start a match to begin playing.
                         </EmptyState>
                     ) : (
                         <RoomsGrid>
@@ -126,7 +126,7 @@ function Status() {
                                     <RoomHeader>
                                         <RoomId>{roomId}</RoomId>
                                         <RoomStatus active={room.isGameActive}>
-                                            {room.isGameActive ? 'Active' : 'Waiting'}
+                                            {room.isGameActive ? 'playing' : 'waiting'}
                                         </RoomStatus>
                                     </RoomHeader>
 
@@ -134,7 +134,7 @@ function Status() {
                                         <SectionTitle>Players ({room.playerCount}/2)</SectionTitle>
                                         {Object.keys(room.players).length === 0 ? (
                                             <EmptyState style={{ padding: '0.5rem' }}>
-                                                No players in room
+                                                no players
                                             </EmptyState>
                                         ) : (
                                             <PlayersList>

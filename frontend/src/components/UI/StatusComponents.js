@@ -2,6 +2,7 @@ import styled from 'styled-components';
 
 export const StatusContainer = styled.div`
   padding: ${props => props.theme.spacing.md};
+  overflow-y: auto;
 `;
 
 export const PageTitle = styled.h1`
