@@ -143,9 +143,11 @@ public class GameService {
     }
 
     /**
-     * Removes the disconnected player from the room.
+     * Removes the disconnected player from the room and deletes the room if it becomes empty.
      *
-     * @param roomId the ID of the room to remove
+     * @param roomId the ID of the room
+     * @param username the username of the player to remove
+     * @return true if the player was successfully removed, false otherwise
      */
     public boolean removePlayerFromRoom(String roomId, String username) {
         GameState gameState = rooms.get(roomId);
@@ -153,6 +155,13 @@ public class GameService {
             if (gameState.removePlayer(username)) {
                 playerRoomMap.remove(username);
                 logger.info("Removed player {} from room {}", username, roomId);
+                
+                // Check if room is now empty and remove it if so
+                if (gameState.getPlayers() == 0) {
+                    rooms.remove(roomId);
+                    logger.info("Room {} removed as it has no more players", roomId);
+                }
+                
                 return true;
             }
         }
