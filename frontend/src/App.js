@@ -139,13 +139,13 @@ function GamePage() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
-      
+
       // Track when second player joins and game actually starts
       if (data.isRoomFull && waitingStartTime) {
         const waitTime = Date.now() - waitingStartTime;
         const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
         trackWaitingForOpponent(waitTime, joinMethod);
-        
+
         const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
         trackGameStarted(gameMode, playerSymbol);
         setGameStartTime(Date.now());
@@ -161,13 +161,13 @@ function GamePage() {
       setGameWinner(null);
       if (data.username !== username) {
         setMessage('opponent left game, returning home...');
-        
+
         // Track game abandonment due to disconnection
         if (gameStartTime) {
           const progress = getGameProgress(history.length);
           trackGameAbandoned('disconnect', progress);
         }
-        
+
         setTimeout(() => {
           window.location.reload();
         }, 3000);
@@ -180,7 +180,7 @@ function GamePage() {
     setIsCreatingRoom(true); // Set the flag before creating room
     webSocketService.createRoom(username, inputRoomId.trim());
     setMessage('creating room...');
-    
+
     // Track game start intent and room creation
     trackGameStartIntent('create_room');
     trackRoomCreated('private', 1);
@@ -191,7 +191,7 @@ function GamePage() {
     // if (inputRoomId.trim() !== '') {
     webSocketService.joinRoom(inputRoomId.trim());
     setMessage('joining game...');
-    
+
     // Track game start intent
     const method = inputRoomId.trim() ? 'join_room' : 'random_match';
     trackGameStartIntent(method);
@@ -253,17 +253,17 @@ function GamePage() {
     setHistory([]);
     setXIsNext(true);
     setGameWinner(null);
-    
+
     // Track rematch request
     if (gameWinner) {
       const previousResult = gameWinner.winner === playerSymbol ? 'win' : 'lose';
       trackRematchRequested(previousResult);
     }
-    
+
     // Reset game timer
     setGameStartTime(Date.now());
     startGameTimer();
-    
+
     webSocketService.sendGameState(roomId, {
       squares: initialSquares,
       history: [],
@@ -309,37 +309,37 @@ function GamePage() {
               <Button onClick={handleJoinRoom}>random match</Button>
             </Controls>
           ) : (
-              <>
-                {!isRoomFull ? (
+            <>
+              {!isRoomFull ? (
+                <GameInfo>
+                  awaiting player...
+                  <br />
+                  {inputRoomId && (
+                    <span>
+                      room:&nbsp;
+                      <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
+                    </span>
+                  )}
+                </GameInfo>
+              ) : (
+                <>
                   <GameInfo>
-                    awaiting player...
+                    you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span>
                     <br />
-                    {inputRoomId &&  (
-                      <span>
-                        room:&nbsp;
-                        <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
-                      </span>
-                      )}
+                    room: <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
                   </GameInfo>
-                ) : (
-                  <>
-                      <GameInfo>
-                        you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span>
-                        <br />
-                        room: <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
-                      </GameInfo>
-                      <Board
-                        squares={squares}
-                        onSquareClick={handleSquareClick}
-                        disabled={disabled || !!gameWinner}
-                        winners={gameWinner && gameWinner.line}
-                        winningLine={null}
-                      />
-                      <TurnInfo>
-                        {turnMessage}
-                      </TurnInfo>
-                  </>
-                )}
+                  <Board
+                    squares={squares}
+                    onSquareClick={handleSquareClick}
+                    disabled={disabled || !!gameWinner}
+                    winners={gameWinner && gameWinner.line}
+                    winningLine={null}
+                  />
+                  <TurnInfo>
+                    {turnMessage}
+                  </TurnInfo>
+                </>
+              )}
               {gameWinner && (
                 <Button onClick={handleNewGame}>new match</Button>
               )}
