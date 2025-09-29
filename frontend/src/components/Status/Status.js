@@ -87,7 +87,7 @@ function Status() {
 
     return (
         <>
-            <Header username={sessionId} showBackLink={true} />
+            <Header username={sessionId} />
             <Container>
                 <StatusContainer>
                     <ConnectionStatus connected={isConnected}>

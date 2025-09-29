@@ -17,7 +17,10 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
         registry.addViewController("/").setViewName("forward:/index.html");
-        // registry.addViewController("/{x:[\\w\\-]+}")
-        //         .setViewName("forward:/index.html");
+        // Forward all non-API routes to index.html to support React Router
+        registry.addViewController("/{x:[\\w\\-]+}")
+                .setViewName("forward:/index.html");
+        registry.addViewController("/{x:^(?!api$).*$}/**/{y:[\\w\\-]+}")
+                .setViewName("forward:/index.html");
     }
 }
