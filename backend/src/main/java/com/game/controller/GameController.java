@@ -147,7 +147,7 @@ public class GameController {
     /*
      * Broadcast game state information to all status page subscribers, at every 3 seconds
      */
-    @Scheduled(fixedRate = 3000)
+    @Scheduled(fixedRate = 750)
     public void broadcastGameState() {
         Map<String, Map<String, Object>> gameStateInfo = gameService.getAllRoomsWithPlayers();
         if (activeProfile.equals("local"))
