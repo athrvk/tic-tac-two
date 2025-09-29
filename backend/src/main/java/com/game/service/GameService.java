@@ -221,6 +221,30 @@ public class GameService {
     }
 
     /**
+     * Retrieves all rooms and their current players.
+     *
+     * @return map of room IDs to room information
+     */
+    public Map<String, Map<String, Object>> getAllRoomsWithPlayers() {
+        Map<String, Map<String, Object>> roomsInfo = new HashMap<>();
+        
+        for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
+            String roomId = entry.getKey();
+            GameState gameState = entry.getValue();
+            
+            Map<String, Object> roomInfo = new HashMap<>();
+            roomInfo.put("players", gameState.getPlayerSymbols());
+            roomInfo.put("playerCount", gameState.getPlayers());
+            roomInfo.put("isGameActive", gameState.getPlayers() == 2);
+            roomInfo.put("currentTurn", gameState.isXIsNext() ? "X" : "O");
+            
+            roomsInfo.put(roomId, roomInfo);
+        }
+        
+        return roomsInfo;
+    }
+
+    /**
      * Response class for joinRoom method.
      */
     public static class JoinRoomResponse {

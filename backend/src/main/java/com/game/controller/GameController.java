@@ -142,4 +142,16 @@ public class GameController {
         messagingTemplate.convertAndSend("/topic/public",
                 Map.of("type", "active_players", "activePlayers", activePlayers));
     }
+
+    /*
+     * Broadcast game state information to all status page subscribers, at every 3 seconds
+     */
+    @Scheduled(fixedRate = 3000)
+    public void broadcastGameState() {
+        Map<String, Map<String, Object>> gameStateInfo = gameService.getAllRoomsWithPlayers();
+        if (activeProfile.equals("local"))
+            logger.info("Broadcasting game state info for {} rooms", gameStateInfo.size());
+        messagingTemplate.convertAndSend("/topic/status",
+                Map.of("type", "game_state_update", "rooms", gameStateInfo));
+    }
 }

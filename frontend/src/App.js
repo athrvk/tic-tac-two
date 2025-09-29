@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Board from './components/Game/Board';
+import Status from './components/Status/Status';
 import { ThemeProvider } from 'styled-components';
 import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
@@ -29,7 +31,7 @@ import {
 } from './utils/analytics';
 
 
-function App() {
+function GamePage() {
   const initialSquares = Array(9).fill(null);
   const [squares, setSquares] = useState(initialSquares);
   const [history, setHistory] = useState([]);
@@ -285,8 +287,7 @@ function App() {
 
 
   return (
-    <ThemeProvider theme={theme}>
-      <GlobalStyle />
+    <>
       <Header username={username} />
       <Container>
         <>
@@ -352,6 +353,20 @@ function App() {
         </>
       </Container>
       <Footer />
+    </>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <GlobalStyle />
+      <Router>
+        <Routes>
+          <Route path="/" element={<GamePage />} />
+          <Route path="/status" element={<Status />} />
+        </Routes>
+      </Router>
     </ThemeProvider>
   );
 }
