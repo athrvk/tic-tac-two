@@ -28,11 +28,11 @@ COPY backend/src ./src
 RUN mvn clean package -B -DskipTests
 
 # Final runtime image
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+RUN groupadd -r appgroup && \
+    useradd -r -g appgroup appuser
 
 WORKDIR /app
 
