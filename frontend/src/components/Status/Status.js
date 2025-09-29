@@ -31,13 +31,14 @@ function Status() {
     const [gameState, setGameState] = useState({});
     const [isConnected, setIsConnected] = useState(false);
     // Generate a unique identifier for this status session
-    const [sessionId] = useState(`status_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    const [sessionId, setSessionId] = useState("");
 
     useEffect(() => {
         console.log('Status component: Setting up dedicated WebSocket connection...');
 
         // Connect to the status WebSocket service
-        statusWebSocketService.connect();
+        const statusId = statusWebSocketService.connect();
+        setSessionId(statusId);
         setIsConnected(statusWebSocketService.isConnected());
 
         // Set up connection callbacks
@@ -76,7 +77,9 @@ function Status() {
             // Disconnect the status WebSocket when component unmounts
             statusWebSocketService.disconnect();
         };
-    }, [sessionId]); const rooms = Object.entries(gameState);
+    }, []);
+
+    const rooms = Object.entries(gameState);
     const totalRooms = rooms.length;
     const activeGames = rooms.filter(([_, room]) => room.isGameActive).length;
     const waitingRooms = rooms.filter(([_, room]) => !room.isGameActive).length;

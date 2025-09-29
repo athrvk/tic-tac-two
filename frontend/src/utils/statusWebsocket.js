@@ -74,6 +74,8 @@ class StatusWebSocketService {
         });
 
         this.client.activate();
+
+        return statusId;
     }
 
     disconnect() {
