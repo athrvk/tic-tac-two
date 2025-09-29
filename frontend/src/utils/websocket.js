@@ -8,24 +8,10 @@ class WebSocketService {
     this.connected = false;
     this.onMessageCallback = null;
     this.onJoinRoomCallback = null; // Add callback for join room
-    this.onConnectCallback = null;
-    this.onDisconnectCallback = null;
     this.connectionStartTime = null;
-    this.subscriptions = new Map(); // Track active subscriptions
   }
 
   connect(username) {
-    // Prevent duplicate connections
-    if (this.client && this.connected) {
-      console.log('WebSocket already connected, reusing existing connection');
-      return;
-    }
-
-    // Disconnect existing client if any
-    if (this.client) {
-      this.client.deactivate();
-    }
-
     this.connectionStartTime = Date.now();
     this.username = encodeURIComponent(username);
     this.client = new Client({
@@ -62,11 +48,6 @@ class WebSocketService {
           trackWebSocketConnected(connectionTime);
         }
         
-        // Call connection callback if set
-        if (this.onConnectCallback) {
-          this.onConnectCallback();
-        }
-
         // Subscribe to public topic for room events
         this.client.subscribe('/topic/public', (message) => {
           const data = JSON.parse(message.body);
@@ -75,7 +56,6 @@ class WebSocketService {
             this.onMessageCallback(data);
           }
         });
-
         // Subscribe to user-specific queue for join room responses
         this.client.subscribe(`/user/queue/join`, (message) => {
           const data = JSON.parse(message.body);
@@ -88,11 +68,6 @@ class WebSocketService {
       onDisconnect: (frame) => {
         this.connected = false;
         console.log('WebSocket disconnected: ' + username);
-
-        // Call disconnect callback if set
-        if (this.onDisconnectCallback) {
-          this.onDisconnectCallback();
-        }
       },
       onStompError: (frame) => {
         console.error('Broker reported error: ' + frame.headers['message']);
@@ -109,84 +84,18 @@ class WebSocketService {
 
   disconnect() {
     if (this.client && this.connected) {
-      // Unsubscribe from all active subscriptions
-      this.subscriptions.forEach((subscription, topic) => {
-        subscription.unsubscribe();
-        console.log('Cleaned up subscription for:', topic);
-      });
-      this.subscriptions.clear();
-
       this.client.deactivate();
-      console.log('WebSocket disconnected and cleaned up');
     }
   }
 
-  subscribe(topicOrRoomId, callback) {
-    if (!this.client || !this.connected) {
-      console.warn('WebSocket not connected, cannot subscribe to:', topicOrRoomId);
-      return null;
-    }
-
-    // Determine the topic path
-    let topic;
-    if (topicOrRoomId.startsWith('/topic/')) {
-      topic = topicOrRoomId;
-    } else {
-      topic = `/topic/room/${topicOrRoomId}`;
-    }
-
-    // Check if already subscribed to this topic
-    if (this.subscriptions.has(topic)) {
-      console.log('Already subscribed to:', topic);
-      return this.subscriptions.get(topic);
-    }
-
-    const subscription = this.client.subscribe(topic, (message) => {
+  subscribe(roomId, callback) {
+    if (!this.client || !this.connected) return;
+    this.client.subscribe(`/topic/room/${roomId}`, (message) => {
       const data = JSON.parse(message.body);
-      console.log(`[${topic}] - Received message:`, data);
+      console.log(`[/topic/room/${roomId}] - Received message:`, data);
       callback(data);
     });
-
-    // Store subscription for cleanup
-    this.subscriptions.set(topic, subscription);
-
-    if (!topicOrRoomId.startsWith('/topic/')) {
-      this.roomId = topicOrRoomId;
-    }
-
-    console.log('Subscribed to:', topic);
-    return subscription;
-  }
-
-  unsubscribe(topicOrRoomId) {
-    let topic;
-    if (topicOrRoomId.startsWith('/topic/')) {
-      topic = topicOrRoomId;
-    } else {
-      topic = `/topic/room/${topicOrRoomId}`;
-    }
-
-    const subscription = this.subscriptions.get(topic);
-    if (subscription) {
-      subscription.unsubscribe();
-      this.subscriptions.delete(topic);
-      console.log('Unsubscribed from:', topic);
-    }
-  }
-
-  // Get current connection status
-  isConnected() {
-    return this.connected;
-  }
-
-  // Get current username
-  getCurrentUsername() {
-    return this.username ? decodeURIComponent(this.username) : null;
-  }
-
-  // Get active subscriptions
-  getActiveSubscriptions() {
-    return Array.from(this.subscriptions.keys());
+    this.roomId = roomId;
   }
 
   sendGameState(roomId, gameState) {
@@ -219,14 +128,6 @@ class WebSocketService {
 
   setOnJoinRoomCallback(callback) { // Add method to set join room callback
     this.onJoinRoomCallback = callback;
-  }
-
-  setOnConnectCallback(callback) {
-    this.onConnectCallback = callback;
-  }
-
-  setOnDisconnectCallback(callback) {
-    this.onDisconnectCallback = callback;
   }
 }
 

@@ -136,6 +136,7 @@ public class GameController {
                 .getUsers()
                 .stream()
                 .map(SimpUser::getName)
+                .filter(username -> username != null && !username.startsWith("status_monitor_")) // Exclude status monitors
                 .collect(Collectors.toList()).size();
         if (activeProfile.equals("local"))
             logger.info("Broadcasting active players : {}", activePlayers);

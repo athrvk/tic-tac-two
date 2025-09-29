@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { webSocketService } from '../../utils/websocket';
+import { statusWebSocketService } from '../../utils/statusWebsocket';
 import { Container } from '../UI/Container';
 import Header from '../UI/Header';
 import Footer from '../UI/Footer';
-import { generateUsername } from 'unique-username-generator';
 import {
     StatusContainer,
     PageTitle,
@@ -31,80 +30,53 @@ import {
 function Status() {
     const [gameState, setGameState] = useState({});
     const [isConnected, setIsConnected] = useState(false);
-    const [username] = useState(generateUsername("-", 0, 16));
+    // Generate a unique identifier for this status session
+    const [sessionId] = useState(`status_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
 
     useEffect(() => {
-        let statusSubscription = null;
+        console.log('Status component: Setting up dedicated WebSocket connection...');
 
-        console.log('Status component: Setting up WebSocket connection...');
-        console.log('Current WebSocket status:', {
-            connected: webSocketService.isConnected(),
-            currentUser: webSocketService.getCurrentUsername(),
-            activeSubscriptions: webSocketService.getActiveSubscriptions()
-        });
+        // Connect to the status WebSocket service
+        statusWebSocketService.connect();
+        setIsConnected(statusWebSocketService.isConnected());
 
-        // Function to handle connection and subscription
-        const setupConnection = () => {
-            if (webSocketService.connected) {
-                setIsConnected(true);
-                // Subscribe to status updates if not already connected to a game
-                statusSubscription = webSocketService.subscribe('/topic/status', (data) => {
-                    if (data.type === 'game_state_update') {
-                        console.log('Status: Received game state update:', data.rooms);
-                        setGameState(data.rooms || {});
-                    }
-                });
-            } else {
-                setIsConnected(false);
-                // Only connect if no existing connection
-                if (!webSocketService.client || !webSocketService.connected) {
-                    console.log('Status: Connecting to WebSocket...');
-                    webSocketService.connect(username);
-                }
-            }
-        };
-
-        // Set up connection status callbacks
-        const originalOnConnect = webSocketService.onConnectCallback;
-        const originalOnDisconnect = webSocketService.onDisconnectCallback;
-
-        webSocketService.setOnConnectCallback(() => {
-            if (originalOnConnect) originalOnConnect();
+        // Set up connection callbacks
+        statusWebSocketService.setOnConnectCallback(() => {
             setIsConnected(true);
-            // Subscribe after connection is established
-            statusSubscription = webSocketService.subscribe('/topic/status', (data) => {
+            console.log('Status: WebSocket connected, subscribing to status updates');
+
+            // Subscribe to status updates after connection is established
+            statusWebSocketService.subscribe('/topic/status', (data) => {
                 if (data.type === 'game_state_update') {
+                    console.log('Status: Received game state update:', data.rooms);
                     setGameState(data.rooms || {});
                 }
             });
         });
 
-        webSocketService.setOnDisconnectCallback(() => {
-            if (originalOnDisconnect) originalOnDisconnect();
+        statusWebSocketService.setOnDisconnectCallback(() => {
             setIsConnected(false);
+            console.log('Status: WebSocket disconnected');
         });
 
-        // Initial setup
-        setupConnection();
+        // If already connected, subscribe immediately
+        if (statusWebSocketService.isConnected()) {
+            statusWebSocketService.subscribe('/topic/status', (data) => {
+                if (data.type === 'game_state_update') {
+                    console.log('Status: Received game state update:', data.rooms);
+                    setGameState(data.rooms || {});
+                }
+            });
+        }
 
         return () => {
-            console.log('Status component: Cleaning up...');
-            // Cleanup subscription
-            if (statusSubscription && typeof statusSubscription.unsubscribe === 'function') {
-                statusSubscription.unsubscribe();
-                console.log('Status: Unsubscribed from local subscription');
-            }
-            // Only unsubscribe from status topic, don't clean up other subscriptions
-            webSocketService.unsubscribe('/topic/status');
-
-            // Restore original callbacks
-            webSocketService.setOnConnectCallback(originalOnConnect);
-            webSocketService.setOnDisconnectCallback(originalOnDisconnect);
-            console.log('Status: Restored original callbacks');
+            console.log('Status component: Cleaning up dedicated WebSocket connection...');
+            // Unsubscribe from status updates
+            statusWebSocketService.unsubscribe('/topic/status');
+            // Disconnect the status WebSocket when component unmounts
+            statusWebSocketService.disconnect();
         };
-    }, [username]);
-
-    const rooms = Object.entries(gameState);
+    }, [sessionId]); const rooms = Object.entries(gameState);
     const totalRooms = rooms.length;
     const activeGames = rooms.filter(([_, room]) => room.isGameActive).length;
     const waitingRooms = rooms.filter(([_, room]) => !room.isGameActive).length;
@@ -112,7 +84,7 @@ function Status() {
 
     return (
         <>
-            <Header username={username} showBackLink={true} />
+            <Header username={sessionId} showBackLink={true} />
             <Container>
                 <StatusContainer>
                     <ConnectionStatus connected={isConnected}>

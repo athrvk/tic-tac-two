@@ -31,6 +31,13 @@ public class WebSocketEventListener {
         String username = Optional.ofNullable(headerAccessor.getUser())
                 .map(Principal::getName)
                 .orElse(null);
+        
+        // Skip processing for status monitor connections
+        if (username != null && username.startsWith("status_monitor_")) {
+            logger.info("Status monitor disconnected: {}", username);
+            return;
+        }
+        
         String roomId = gameService.getRoomOfPlayer(username);
 
         if (roomId != null && username != null) {
