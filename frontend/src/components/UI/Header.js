@@ -43,7 +43,7 @@ const Header = ({ username }) => {
             <a href="/" style={{ textDecoration: 'none', color: theme.colors.text }}>
                 <Title>tic tac two</Title>
             </a>
-            <Username>hello {username}</Username>
+            <Username>{username}</Username>
         </HeaderContainer>
     );
 };

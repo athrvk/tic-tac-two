@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Board from './components/Game/Board';
+import Status from './components/Status/Status';
 import { ThemeProvider } from 'styled-components';
 import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
@@ -29,7 +31,7 @@ import {
 } from './utils/analytics';
 
 
-function App() {
+function GamePage() {
   const initialSquares = Array(9).fill(null);
   const [squares, setSquares] = useState(initialSquares);
   const [history, setHistory] = useState([]);
@@ -90,7 +92,7 @@ function App() {
     if (data.type === 'room_created' && isCreatingRoomRef.current) {
       setRoomId(data.roomId);
       webSocketService.joinRoom(data.roomId);
-      setMessage('joining room: ' + data.roomId);
+      setMessage('connecting to ' + data.roomId);
       setIsCreatingRoom(false);
     }
     if (data.type === 'active_players') {
@@ -137,13 +139,13 @@ function App() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
-      
+
       // Track when second player joins and game actually starts
       if (data.isRoomFull && waitingStartTime) {
         const waitTime = Date.now() - waitingStartTime;
         const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
         trackWaitingForOpponent(waitTime, joinMethod);
-        
+
         const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
         trackGameStarted(gameMode, playerSymbol);
         setGameStartTime(Date.now());
@@ -158,14 +160,14 @@ function App() {
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('other player disconnected, redirecting to home...');
-        
+        setMessage('opponent left game, returning home...');
+
         // Track game abandonment due to disconnection
         if (gameStartTime) {
           const progress = getGameProgress(history.length);
           trackGameAbandoned('disconnect', progress);
         }
-        
+
         setTimeout(() => {
           window.location.reload();
         }, 3000);
@@ -178,7 +180,7 @@ function App() {
     setIsCreatingRoom(true); // Set the flag before creating room
     webSocketService.createRoom(username, inputRoomId.trim());
     setMessage('creating room...');
-    
+
     // Track game start intent and room creation
     trackGameStartIntent('create_room');
     trackRoomCreated('private', 1);
@@ -188,8 +190,8 @@ function App() {
     e.preventDefault();
     // if (inputRoomId.trim() !== '') {
     webSocketService.joinRoom(inputRoomId.trim());
-    setMessage('joining room...');
-    
+    setMessage('joining game...');
+
     // Track game start intent
     const method = inputRoomId.trim() ? 'join_room' : 'random_match';
     trackGameStartIntent(method);
@@ -202,7 +204,7 @@ function App() {
       (playerSymbol === 'O' && !xIsNext);
 
     if (!isPlayersTurn) {
-      setMessage("it's not your turn!");
+      setMessage("wait your turn");
       setTimeout(() => setMessage(''), 4000);
       return;
     } else {
@@ -251,17 +253,17 @@ function App() {
     setHistory([]);
     setXIsNext(true);
     setGameWinner(null);
-    
+
     // Track rematch request
     if (gameWinner) {
       const previousResult = gameWinner.winner === playerSymbol ? 'win' : 'lose';
       trackRematchRequested(previousResult);
     }
-    
+
     // Reset game timer
     setGameStartTime(Date.now());
     startGameTimer();
-    
+
     webSocketService.sendGameState(roomId, {
       squares: initialSquares,
       history: [],
@@ -271,29 +273,28 @@ function App() {
 
   const turnMessage = useMemo(() => {
     if (gameWinner) {
-      return gameWinner.winner === playerSymbol ? 'you won!' : 'you lost!';
+      return gameWinner.winner === playerSymbol ? 'you win' : 'you lose';
     }
     if (xIsNext && playerSymbol === 'X') {
-      return "it's your turn!";
+      return "your move";
     }
     if (!xIsNext && playerSymbol === 'O') {
-      return "it's your turn!";
+      return "your move";
     }
-    return 'wait for other player to play!';
+    return "opponent's turn";
   }, [gameWinner, playerSymbol, xIsNext]);
 
 
 
   return (
-    <ThemeProvider theme={theme}>
-      <GlobalStyle />
+    <>
       <Header username={username} />
       <Container>
         <>
           {!roomId ? (
             <Controls>
               <RoomControls>
-                <Label>room id</Label>
+                <Label>room code</Label>
                 <Input
                   type="text"
                   placeholder={generateUsername("-", 3, 6)}
@@ -301,57 +302,71 @@ function App() {
                   onChange={(e) => setInputRoomId(e.target.value)}
                 />
                 <RoomControlsButtonGroup>
-                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>create room</Button>
-                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join room</Button>
+                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
+                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join game</Button>
                 </RoomControlsButtonGroup>
               </RoomControls>
-              <Button onClick={handleJoinRoom}>play online</Button>
+              <Button onClick={handleJoinRoom}>random match</Button>
             </Controls>
           ) : (
-              <>
-                {!isRoomFull ? (
+            <>
+              {!isRoomFull ? (
+                <GameInfo>
+                  awaiting player...
+                  <br />
+                  {inputRoomId && (
+                    <span>
+                      room:&nbsp;
+                      <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
+                    </span>
+                  )}
+                </GameInfo>
+              ) : (
+                <>
                   <GameInfo>
-                    waiting for other player to join...
+                    you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span>
                     <br />
-                    {inputRoomId &&  (
-                      <span>
-                        room:&nbsp;
-                        <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
-                      </span>
-                      )}
+                    room: <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
                   </GameInfo>
-                ) : (
-                  <>
-                      <GameInfo>
-                        you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span> in room:
-                        <br />
-                        <span>{roomId}</span>
-                      </GameInfo>
-                      <Board
-                        squares={squares}
-                        onSquareClick={handleSquareClick}
-                        disabled={disabled || !!gameWinner}
-                        winners={gameWinner && gameWinner.line}
-                        winningLine={null}
-                      />
-                      <TurnInfo>
-                        {turnMessage}
-                      </TurnInfo>
-                  </>
-                )}
+                  <Board
+                    squares={squares}
+                    onSquareClick={handleSquareClick}
+                    disabled={disabled || !!gameWinner}
+                    winners={gameWinner && gameWinner.line}
+                    winningLine={null}
+                  />
+                  <TurnInfo>
+                    {turnMessage}
+                  </TurnInfo>
+                </>
+              )}
               {gameWinner && (
-                <Button onClick={handleNewGame}>new game</Button>
+                <Button onClick={handleNewGame}>new match</Button>
               )}
             </>
           )}
           {message && <Message>{message}</Message>}
           {gameWinner && gameWinner.winner === playerSymbol && <Confetti />}
           <GameInfo>
-            global active players: {activePlayers}
+            players online: {activePlayers}
           </GameInfo>
         </>
       </Container>
       <Footer />
+    </>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <GlobalStyle />
+      <Router>
+        <Routes>
+          <Route path="/" element={<GamePage />} />
+          <Route path="/status" element={<Status />} />
+        </Routes>
+      </Router>
     </ThemeProvider>
   );
 }
