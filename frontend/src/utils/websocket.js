@@ -1,5 +1,6 @@
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
+import { trackWebSocketConnected, trackWebSocketError } from './analytics';
 
 class WebSocketService {
   constructor() {
@@ -7,9 +8,11 @@ class WebSocketService {
     this.connected = false;
     this.onMessageCallback = null;
     this.onJoinRoomCallback = null; // Add callback for join room
+    this.connectionStartTime = null;
   }
 
   connect(username) {
+    this.connectionStartTime = Date.now();
     this.username = encodeURIComponent(username);
     this.client = new Client({
       // brokerURL: `ws://localhost:8080/ws`, // Update with backend WebSocket endpoint if different
@@ -38,6 +41,13 @@ class WebSocketService {
       onConnect: (frame) => {
         this.connected = true;
         console.log('STOMP connected as : ' + username);
+        
+        // Track successful WebSocket connection
+        if (this.connectionStartTime) {
+          const connectionTime = Date.now() - this.connectionStartTime;
+          trackWebSocketConnected(connectionTime);
+        }
+        
         // Subscribe to public topic for room events
         this.client.subscribe('/topic/public', (message) => {
           const data = JSON.parse(message.body);
@@ -62,6 +72,10 @@ class WebSocketService {
       onStompError: (frame) => {
         console.error('Broker reported error: ' + frame.headers['message']);
         console.error('Additional details: ' + frame.body);
+        
+        // Track WebSocket errors
+        const errorType = frame.headers['message'] || 'unknown_error';
+        trackWebSocketError(errorType);
       },
     });
 

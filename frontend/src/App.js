@@ -12,6 +12,21 @@ import { calculateWinner } from './utils/helper';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 import Confetti from 'react-confetti';
+import {
+  trackGameStartIntent,
+  trackRoomCreated,
+  trackRoomJoined,
+  trackGameStarted,
+  trackMoveMade,
+  trackGameCompleted,
+  trackGameAbandoned,
+  trackRematchRequested,
+  trackWaitingForOpponent,
+  startGameTimer,
+  getGameDuration,
+  incrementSessionGameCount,
+  getGameProgress
+} from './utils/analytics';
 
 
 function App() {
@@ -32,6 +47,8 @@ function App() {
   const [isRoomFull, setIsRoomFull] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const isCreatingRoomRef = useRef(isCreatingRoom);
+  const [waitingStartTime, setWaitingStartTime] = useState(null);
+  const [gameStartTime, setGameStartTime] = useState(null);
 
   useEffect(() => {
     isCreatingRoomRef.current = isCreatingRoom;
@@ -92,6 +109,22 @@ function App() {
       setMessage(`joined room: ${data.roomId}`);
       setTimeout(() => setMessage(''), 4000);
       setIsCreatingRoom(false);
+
+      // Track room joined event
+      const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
+      trackRoomJoined(joinMethod, data.roomId);
+
+      // Start waiting timer if room is not full
+      if (!data.isRoomFull) {
+        setWaitingStartTime(Date.now());
+        trackWaitingForOpponent(0, joinMethod);
+      } else {
+        // Game is starting with both players
+        const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
+        trackGameStarted(gameMode, data.playerSymbol);
+        setGameStartTime(Date.now());
+        startGameTimer();
+      }
     }
   };
 
@@ -104,6 +137,19 @@ function App() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
+      
+      // Track when second player joins and game actually starts
+      if (data.isRoomFull && waitingStartTime) {
+        const waitTime = Date.now() - waitingStartTime;
+        const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
+        trackWaitingForOpponent(waitTime, joinMethod);
+        
+        const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
+        trackGameStarted(gameMode, playerSymbol);
+        setGameStartTime(Date.now());
+        startGameTimer();
+        setWaitingStartTime(null);
+      }
     }
     if (data.type === 'player_disconnected' && data.roomId === roomId) {
       setIsRoomFull(false);
@@ -113,6 +159,13 @@ function App() {
       setGameWinner(null);
       if (data.username !== username) {
         setMessage('other player disconnected, redirecting to home...');
+        
+        // Track game abandonment due to disconnection
+        if (gameStartTime) {
+          const progress = getGameProgress(history.length);
+          trackGameAbandoned('disconnect', progress);
+        }
+        
         setTimeout(() => {
           window.location.reload();
         }, 3000);
@@ -125,6 +178,10 @@ function App() {
     setIsCreatingRoom(true); // Set the flag before creating room
     webSocketService.createRoom(username, inputRoomId.trim());
     setMessage('creating room...');
+    
+    // Track game start intent and room creation
+    trackGameStartIntent('create_room');
+    trackRoomCreated('private', 1);
   };
 
   const handleJoinRoom = (e) => {
@@ -132,6 +189,10 @@ function App() {
     // if (inputRoomId.trim() !== '') {
     webSocketService.joinRoom(inputRoomId.trim());
     setMessage('joining room...');
+    
+    // Track game start intent
+    const method = inputRoomId.trim() ? 'join_room' : 'random_match';
+    trackGameStartIntent(method);
     // }
   };
 
@@ -165,6 +226,18 @@ function App() {
     setHistory(newHistory);
     setXIsNext(!xIsNext);
 
+    // Track the move
+    trackMoveMade(newHistory.length, index, playerSymbol);
+
+    // Check for game completion
+    const winner = calculateWinner(newSquares);
+    if (winner) {
+      const gameDuration = getGameDuration();
+      const gameResult = winner.winner === playerSymbol ? 'win' : 'lose';
+      trackGameCompleted(gameResult, gameDuration, newHistory.length, winner.winner);
+      incrementSessionGameCount();
+    }
+
     webSocketService.sendGameState(roomId, {
       squares: newSquares,
       history: newHistory,
@@ -178,6 +251,17 @@ function App() {
     setHistory([]);
     setXIsNext(true);
     setGameWinner(null);
+    
+    // Track rematch request
+    if (gameWinner) {
+      const previousResult = gameWinner.winner === playerSymbol ? 'win' : 'lose';
+      trackRematchRequested(previousResult);
+    }
+    
+    // Reset game timer
+    setGameStartTime(Date.now());
+    startGameTimer();
+    
     webSocketService.sendGameState(roomId, {
       squares: initialSquares,
       history: [],
