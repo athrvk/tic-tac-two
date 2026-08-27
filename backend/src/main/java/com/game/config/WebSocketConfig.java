@@ -14,6 +14,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.*;
 
 @Configuration
@@ -29,8 +30,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     // Configure message broker
     @Override
     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
+        // Heartbeats need a scheduler; without them a vanished peer (network
+        // drop, killed app) is only detected on TCP timeout
+        ThreadPoolTaskScheduler heartbeatScheduler = new ThreadPoolTaskScheduler();
+        heartbeatScheduler.setPoolSize(1);
+        heartbeatScheduler.setThreadNamePrefix("ws-heartbeat-");
+        heartbeatScheduler.initialize();
         // Enable a simple memory-based message broker to carry the messages back to the client
-        config.enableSimpleBroker("/topic", "/queue"); // Enable "/topic" and "/queue" for message brokers
+        config.enableSimpleBroker("/topic", "/queue") // Enable "/topic" and "/queue" for message brokers
+                .setHeartbeatValue(new long[]{3000, 3000})
+                .setTaskScheduler(heartbeatScheduler);
         // Set the prefix for messages that are bound for methods annotated with @MessageMapping
         config.setApplicationDestinationPrefixes("/app"); // Prefix for endpoints
         config.setUserDestinationPrefix("/user"); // Prefix for user-specific destinations

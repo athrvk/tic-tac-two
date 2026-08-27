@@ -38,8 +38,13 @@ public class GameService {
      * @return the room ID
      */
     public String createRoom(String roomId) {
-        if (rooms.containsKey(roomId)) {
-            logger.warn("Room ID {} already exists, resetting it's state", roomId);
+        GameState existing = rooms.get(roomId);
+        if (existing != null && existing.getPlayers() > 0) {
+            // Never reset a room that has players in it — the creator will
+            // simply join it (e.g. two friends both pressing "new game" with
+            // the same code end up in the same room)
+            logger.info("Room {} already exists with players, joining instead of resetting", roomId);
+            return roomId;
         }
         rooms.put(roomId, new GameState());
         logger.info("Created new room on user request with ID: {}", roomId);
@@ -65,57 +70,90 @@ public class GameService {
                 GameState room = entry.getValue();
                 if (room.getPlayers() == 1) {
                     String symbol = room.assignSymbol(username);
+                    if (symbol == null) {
+                        // Room filled up concurrently, keep looking
+                        continue;
+                    }
                     playerRoomMap.put(username, entry.getKey());
-                    Map<String, String> playerSymbols = room.getPlayerSymbols();
-                    logger.info("Players in room {}: {}", entry.getKey(), playerSymbols);
+                    logger.info("Players in room {}: {}", entry.getKey(), room.getPlayerSymbols());
                     return new JoinRoomResponse(entry.getKey(), symbol);
                 }
             }
             // If no room with one player is found, create a new room
-            String newRoomId = createRoom();
-            GameState newRoom = rooms.get(newRoomId);
-            String symbol = newRoom.assignSymbol(username);
-            playerRoomMap.put(username, newRoomId);
-            Map<String, String> playerSymbols = newRoom.getPlayerSymbols();
-            logger.info("Players in room {}: {}", newRoomId, playerSymbols);
-            return new JoinRoomResponse(newRoomId, symbol);
+            return joinNewRoom(username);
         }
         GameState desiredRoom = rooms.get(desiredRoomId);
-        if (desiredRoom != null && desiredRoom.getPlayers() < 2) {
-            logger.info("Joining existing room on user request with ID: {}", desiredRoomId);
+        if (desiredRoom != null) {
             String symbol = desiredRoom.assignSymbol(username);
-            playerRoomMap.put(username, desiredRoomId);
-            Map<String, String> playerSymbols = desiredRoom.getPlayerSymbols();
-            logger.info("Players in room {}: {}", desiredRoomId, playerSymbols);
-            return new JoinRoomResponse(desiredRoomId, symbol);
+            if (symbol != null) {
+                logger.info("Joining existing room on user request with ID: {}", desiredRoomId);
+                playerRoomMap.put(username, desiredRoomId);
+                logger.info("Players in room {}: {}", desiredRoomId, desiredRoom.getPlayerSymbols());
+                return new JoinRoomResponse(desiredRoomId, symbol);
+            }
         }
-        // If no room with one player is found, create a new room
+        // Desired room is full or does not exist — create a new room
+        return joinNewRoom(username);
+    }
+
+    private JoinRoomResponse joinNewRoom(String username) {
         String newRoomId = createRoom();
         GameState newRoom = rooms.get(newRoomId);
         String symbol = newRoom.assignSymbol(username);
         playerRoomMap.put(username, newRoomId);
-        Map<String, String> playerSymbols = newRoom.getPlayerSymbols();
-        logger.info("Players in room {}: {}", newRoomId, playerSymbols);
+        logger.info("Players in room {}: {}", newRoomId, newRoom.getPlayerSymbols());
         return new JoinRoomResponse(newRoomId, symbol);
     }
 
     /**
-     * Updates the game state for a specific room.
+     * Updates the game state for a specific room after validating the
+     * client-supplied payload (9 squares of null/X/O, at most 6 history
+     * entries with board indices, and a boolean turn flag).
      *
      * @param roomId    the ID of the room
      * @param gameState the new game state
+     * @return true if the state was valid and applied, false otherwise
      */
-    @SuppressWarnings("unchecked")
-    public void updateGameState(String roomId, Map<String, Object> gameState) {
+    public boolean updateGameState(String roomId, Map<String, Object> gameState) {
         GameState state = rooms.get(roomId);
-        if (state != null) {
-            state.setSquares((List<String>) gameState.get("squares"));
-            state.setHistory((List<Integer>) gameState.get("history"));
-            state.setXIsNext((Boolean) gameState.get("xIsNext"));
-            logger.info("Updated game state for room: {}", roomId);
-        } else {
-            logger.error("Attempted to update non-existent room: {}", roomId);
+        if (state == null) {
+            logger.warn("Attempted to update non-existent room: {}", roomId);
+            return false;
         }
+        Object squaresObj = gameState.get("squares");
+        Object historyObj = gameState.get("history");
+        Object xIsNextObj = gameState.get("xIsNext");
+        if (!(squaresObj instanceof List) || !(historyObj instanceof List) || !(xIsNextObj instanceof Boolean)) {
+            logger.warn("Rejected malformed game state for room: {}", roomId);
+            return false;
+        }
+        List<?> rawSquares = (List<?>) squaresObj;
+        List<?> rawHistory = (List<?>) historyObj;
+        if (rawSquares.size() != 9 || rawHistory.size() > 6) {
+            logger.warn("Rejected out-of-shape game state for room: {}", roomId);
+            return false;
+        }
+        List<String> squares = new ArrayList<>(9);
+        for (Object sq : rawSquares) {
+            if (sq != null && !"X".equals(sq) && !"O".equals(sq)) {
+                logger.warn("Rejected invalid square value for room: {}", roomId);
+                return false;
+            }
+            squares.add((String) sq);
+        }
+        List<Integer> history = new ArrayList<>(rawHistory.size());
+        for (Object move : rawHistory) {
+            if (!(move instanceof Integer) || (Integer) move < 0 || (Integer) move > 8) {
+                logger.warn("Rejected invalid history entry for room: {}", roomId);
+                return false;
+            }
+            history.add((Integer) move);
+        }
+        state.setSquares(squares);
+        state.setHistory(history);
+        state.setXIsNext((Boolean) xIsNextObj);
+        logger.info("Updated game state for room: {}", roomId);
+        return true;
     }
 
     /**

@@ -40,24 +40,20 @@ public class GameController {
 
     @MessageMapping("/createRoom")
     public void createRoom(@Payload Map<String, Object> payload, Principal principal) {
-        String requestedRoomId = (String) payload.get("roomId");
-        if (requestedRoomId != null && !requestedRoomId.isEmpty()) {
-            // Check if the requested room ID is already taken
-            if (gameService.getRooms().contains(requestedRoomId)) {
-                logger.info("Room with ID {} already exists still creating new room, no error handling for now", requestedRoomId);
-                // handle it later
-            }
-            // Create a room with the requested ID
-            gameService.createRoom(requestedRoomId);
-            logger.info("Room created with ID: {}", requestedRoomId);
-            messagingTemplate.convertAndSend("/topic/public",
-                    Map.of("type", "room_created", "roomId", requestedRoomId));
+        if (principal == null) {
+            logger.warn("createRoom request without a principal, ignoring");
             return;
         }
-        // Create a room with a random ID
-        String roomId = gameService.createRoom();
+        String requestedRoomId = (String) payload.get("roomId");
+        String roomId = (requestedRoomId != null && !requestedRoomId.isEmpty())
+                ? gameService.createRoom(requestedRoomId)
+                : gameService.createRoom();
         logger.info("Room created with ID: {}", roomId);
-        messagingTemplate.convertAndSend("/topic/public",
+        // Reply only to the creator: a public broadcast would let two users
+        // creating rooms at the same time join each other's room
+        messagingTemplate.convertAndSendToUser(
+                principal.getName(),
+                "/queue/roomCreated",
                 Map.of("type", "room_created", "roomId", roomId));
     }
 
@@ -68,6 +64,10 @@ public class GameController {
      */
     @MessageMapping("/joinRoom")
     public void joinRoom(@Payload Map<String, Object> payload, Principal principal) {
+        if (principal == null) {
+            logger.warn("joinRoom request without a principal, ignoring");
+            return;
+        }
         String desiredRoomId = (String) payload.get("roomId");
         String username = principal.getName();
         JoinRoomResponse response = gameService.joinRoom(desiredRoomId, username);
@@ -107,9 +107,16 @@ public class GameController {
     @MessageMapping("/updateGameState")
     public void updateGameState(@Payload Map<String, Object> payload) {
         String roomId = (String) payload.get("roomId");
+        Object gameStateObj = payload.get("gameState");
+        if (!(gameStateObj instanceof Map)) {
+            logger.warn("Ignoring malformed updateGameState payload for room: {}", roomId);
+            return;
+        }
         @SuppressWarnings("unchecked")
-        Map<String, Object> gameState = (Map<String, Object>) payload.get("gameState");
-        gameService.updateGameState(roomId, gameState);
+        Map<String, Object> gameState = (Map<String, Object>) gameStateObj;
+        if (!gameService.updateGameState(roomId, gameState)) {
+            return;
+        }
         logger.info("Game state updated for room: {}", roomId);
         // Broadcast the updated game state to all players in the room
         messagingTemplate.convertAndSend("/topic/room/" + roomId,
@@ -145,9 +152,9 @@ public class GameController {
     }
 
     /*
-     * Broadcast game state information to all status page subscribers, at every 3 seconds
+     * Broadcast game state information to all status page subscribers, every 2 seconds
      */
-    @Scheduled(fixedRate = 750)
+    @Scheduled(fixedRate = 2000)
     public void broadcastGameState() {
         Map<String, Map<String, Object>> gameStateInfo = gameService.getAllRoomsWithPlayers();
         if (activeProfile.equals("local"))

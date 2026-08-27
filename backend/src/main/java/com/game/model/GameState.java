@@ -104,15 +104,14 @@ public class GameState {
                 return playerSymbols.get(username);
             }
 
-            // Assign a symbol based on the current number of players and existing assignments
-            String symbol;
-            if (!playerSymbols.containsValue("X")) {
-                symbol = "X";
-            } else if (!playerSymbols.containsValue("O")) {
-                symbol = "O";
-            } else {
-                symbol = "X"; // Fallback, should not occur
+            // Room is full — the check-then-act in callers can race, so the
+            // capacity check must live inside the lock
+            if (players >= 2) {
+                return null;
             }
+
+            // Assign a symbol based on existing assignments
+            String symbol = !playerSymbols.containsValue("X") ? "X" : "O";
 
             playerSymbols.put(username, symbol);
             players++;

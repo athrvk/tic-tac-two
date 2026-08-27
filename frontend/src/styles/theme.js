@@ -1,18 +1,24 @@
 // src/styles/theme.js
+// Editorial "ink on paper" palette — high contrast, e-ink friendly,
+// with two ink accents so X and O read at a glance.
 export const theme = {
     colors: {
-        primary: '#000000', // Black for high contrast
+        primary: '#141414', // Ink black for high contrast
         secondary: '#8a8a8a', // Even darker gray for better differentiation from primary color
-        background: '#f6f6f6', // Light gray background for Kindle Paperwhite compatibility
+        background: '#f7f5f0', // Warm paper background, still Kindle Paperwhite friendly
+        surface: '#ffffff', // Card / board cell surface
         darkBackground: '#333333', // Darker gray background for better contrast
-        text: '#000000', // Black text for high contrast
+        text: '#141414', // Ink text for high contrast
         darkText: '#393939',
-        border: '#cccccc', // Light gray border for subtle contrast
-        winner: '#000000', // Black for high contrast
-        hover: '#e0e0e0', // Light gray for hover effect
-        lightGray: '#d3d3d3', // Additional light gray shade
-        mediumGray: '#a9a9a9', // Additional medium gray shade
-        darkGray: '#696969' // Additional dark gray shade
+        muted: '#6f6a60', // Warm gray for secondary text
+        border: '#d9d4c9', // Warm light border for subtle contrast
+        winner: '#141414', // Ink for high contrast
+        hover: '#eceae3', // Warm light hover effect
+        lightGray: '#e4e1d8', // Warm light shade (header/footer)
+        mediumGray: '#a9a49a', // Warm medium shade
+        darkGray: '#57534a', // Warm dark shade
+        xInk: '#b3372a', // Red ink for X
+        oInk: '#1f5f8b', // Blue ink for O
     },
     typography: {
         fontFamily: "'Georgia', serif", // Serif font for better readability on e-ink displays
