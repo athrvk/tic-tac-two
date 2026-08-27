@@ -38,7 +38,17 @@ RUN groupadd -r appgroup && \
 WORKDIR /app
 
 # Copy jar with specific name for better caching
-COPY --from=backend-build --chown=appuser:appgroup /app/backend/target/*.jar ./app.jar
+COPY --from=backend-build /app/backend/target/*.jar ./app.jar
+
+# Extract into CDS-friendly layout, then do a training run to produce the
+# AppCDS archive (spring.context.exit=onRefresh stops the app right after
+# the context refreshes, before it starts listening)
+RUN java -Djarmode=tools -jar app.jar extract --destination application
+RUN java -XX:ArchiveClassesAtExit=application/application.jsa \
+    -Dspring.context.exit=onRefresh \
+    -jar application/app.jar
+
+RUN chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser
@@ -46,11 +56,12 @@ USER appuser
 # Expose port
 EXPOSE 10000
 
-# Optimize JVM for containers
+# Optimize JVM for containers; SharedArchiveFile cuts cold-start roughly in half
 ENTRYPOINT ["java", \
+    "-XX:SharedArchiveFile=application/application.jsa", \
     "-XX:+UseContainerSupport", \
     "-XX:MaxRAMPercentage=75.0", \
     "-Djava.security.egd=file:/dev/./urandom", \
     "-Dspring.profiles.active=prod", \
     "-jar", \
-    "app.jar"]
+    "application/app.jar"]

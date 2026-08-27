@@ -305,23 +305,7 @@ public class GameService {
     }
 
     /**
-     * Response class for joinRoom method.
+     * Response record for joinRoom method.
      */
-    public static class JoinRoomResponse {
-        private String roomId;
-        private String playerSymbol;
-
-        public JoinRoomResponse(String roomId, String playerSymbol) {
-            this.roomId = roomId;
-            this.playerSymbol = playerSymbol;
-        }
-
-        public String getRoomId() {
-            return roomId;
-        }
-
-        public String getPlayerSymbol() {
-            return playerSymbol;
-        }
-    }
+    public record JoinRoomResponse(String roomId, String playerSymbol) {}
 }

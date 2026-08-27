@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useActionState, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Board from './components/Game/Board';
-import Status from './components/Status/Status';
 import { ThemeProvider } from 'styled-components';
 import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
@@ -14,7 +13,11 @@ import { calculateWinner } from './utils/helper';
 import { buildInviteLink, shareLink, shareOrCopy, sanitizeRoomCode } from './utils/share';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
-import Confetti from 'react-confetti';
+
+// Code-split what the first paint never needs: the status dashboard and
+// the confetti (only shown when a game ends)
+const Status = lazy(() => import('./components/Status/Status'));
+const Confetti = lazy(() => import('react-confetti'));
 import {
   trackGameStartIntent,
   trackRoomCreated,
@@ -163,6 +166,10 @@ function GamePage() {
       setIsRoomFull(data.isRoomFull);
       showMessage('room joined');
       setIsCreatingRoom(false);
+      if (joinResolveRef.current) {
+        joinResolveRef.current();
+        joinResolveRef.current = null;
+      }
       // Keep the room code in the URL so the address bar itself is a shareable invite
       window.history.replaceState(null, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomId)}`);
 
@@ -233,8 +240,19 @@ function GamePage() {
     }
   };
 
-  const handleCreateRoom = (e) => {
-    e.preventDefault();
+  // Resolved by handleJoinRoomResponse's room_joined branch, or by a 10s
+  // timeout so a lost/never-arriving response can't strand the action pending forever
+  const joinResolveRef = useRef(null);
+  const awaitJoin = () => new Promise((resolve) => {
+    joinResolveRef.current = resolve;
+    setTimeout(resolve, 10000);
+  });
+
+  const [, createAction, createPending] = useActionState(async () => {
+    // Set the ref synchronously (not just the state) - the room_created
+    // handler below can otherwise fire before a state update inside this
+    // action transition has committed, and isCreatingRoomRef would still read false.
+    isCreatingRoomRef.current = true;
     setIsCreatingRoom(true); // Set the flag before creating room
     webSocketService.createRoom(username, inputRoomId.trim());
     showMessage('creating room...', 0);
@@ -242,28 +260,28 @@ function GamePage() {
     // Track game start intent and room creation
     trackGameStartIntent('create_room');
     trackRoomCreated('private', 1);
-  };
+    await awaitJoin();
+  }, null);
 
-  const handleJoinRoom = (e) => {
-    e.preventDefault();
-    // if (inputRoomId.trim() !== '') {
+  const [, joinAction, joinPending] = useActionState(async () => {
     webSocketService.joinRoom(inputRoomId.trim());
     showMessage('joining game...', 0);
 
     // Track game start intent
-    const method = inputRoomId.trim() ? 'join_room' : 'random_match';
-    trackGameStartIntent(method);
-    // }
-  };
+    trackGameStartIntent(inputRoomId.trim() ? 'join_room' : 'random_match');
+    await awaitJoin();
+  }, null);
 
-  const handleRandomMatch = (e) => {
-    e.preventDefault();
+  const [, randomAction, randomPending] = useActionState(async () => {
     // Ignore whatever is typed in the room-code box - random match always
     // joins an empty room id
     webSocketService.joinRoom('');
     showMessage('finding a match...', 0);
     trackGameStartIntent('random_match');
-  };
+    await awaitJoin();
+  }, null);
+
+  const anyPending = createPending || joinPending || randomPending;
 
   const handleSquareClick = (index) => {
     const isPlayersTurn =
@@ -398,10 +416,20 @@ function GamePage() {
 
   const isMyTurn = (playerSymbol === 'X' && xIsNext) || (playerSymbol === 'O' && !xIsNext);
 
-
+  const pageTitle = useMemo(() => {
+    if (!roomId) return null;
+    if (gameWinner) {
+      return gameWinner.winner === playerSymbol ? 'you win - tic-tac-two' : 'you lose - tic-tac-two';
+    }
+    if (isRoomFull) {
+      return isMyTurn ? 'your move - tic-tac-two' : "opponent's turn - tic-tac-two";
+    }
+    return 'waiting for an opponent - tic-tac-two';
+  }, [roomId, gameWinner, playerSymbol, isRoomFull, isMyTurn]);
 
   return (
     <>
+      {pageTitle && <title>{pageTitle}</title>}
       <Header username={username} />
       <Container>
         <>
@@ -413,25 +441,34 @@ function GamePage() {
                 remember what's gone. no draws, ever.
               </RuleHint>
               <Controls>
-                <RoomControls>
-                  <Label>room code</Label>
-                  <Input
-                    type="text"
-                    placeholder={`e.g. ${placeholderCode}`}
-                    value={inputRoomId}
-                    onChange={(e) => setInputRoomId(e.target.value.replace(/\s+/g, ''))}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && inputRoomId) handleJoinRoom(e); }}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                  <RoomControlsButtonGroup>
-                    <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
-                    <Button $ghost onClick={handleJoinRoom} disabled={!inputRoomId}>join game</Button>
-                  </RoomControlsButtonGroup>
-                </RoomControls>
+                <form action={joinAction} style={{ display: 'contents' }}>
+                  <RoomControls>
+                    <Label>room code</Label>
+                    <Input
+                      type="text"
+                      placeholder={`e.g. ${placeholderCode}`}
+                      value={inputRoomId}
+                      onChange={(e) => setInputRoomId(e.target.value.replace(/\s+/g, ''))}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                    <RoomControlsButtonGroup>
+                      <Button formAction={createAction} disabled={!inputRoomId || anyPending}>
+                        {createPending ? 'creating...' : 'new game'}
+                      </Button>
+                      <Button type="submit" $ghost disabled={!inputRoomId || anyPending}>
+                        {joinPending ? 'joining...' : 'join game'}
+                      </Button>
+                    </RoomControlsButtonGroup>
+                  </RoomControls>
+                </form>
                 <OrDivider>or</OrDivider>
-                <Button onClick={handleRandomMatch}>random match</Button>
+                <form action={randomAction} style={{ display: 'contents' }}>
+                  <Button type="submit" disabled={anyPending}>
+                    {randomPending ? 'matching...' : 'random match'}
+                  </Button>
+                </form>
               </Controls>
             </>
           ) : (
@@ -484,8 +521,10 @@ function GamePage() {
           )}
           {!isConnected && hasEverConnectedRef.current && <Message>reconnecting…</Message>}
           {message && <Message>{message}</Message>}
-          {gameWinner && gameWinner.winner === playerSymbol && <Confetti recycle={false} numberOfPieces={500} />}
-          {forfeitWin && <Confetti recycle={false} numberOfPieces={350} />}
+          <Suspense fallback={null}>
+            {gameWinner && gameWinner.winner === playerSymbol && <Confetti recycle={false} numberOfPieces={500} />}
+            {forfeitWin && <Confetti recycle={false} numberOfPieces={350} />}
+          </Suspense>
           <MutedNote>
             {activePlayers} player{activePlayers === 1 ? '' : 's'} online
           </MutedNote>
@@ -503,7 +542,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<GamePage />} />
-          <Route path="/status" element={<Status />} />
+          <Route path="/status" element={<Suspense fallback={null}><Status /></Suspense>} />
         </Routes>
       </Router>
     </ThemeProvider>

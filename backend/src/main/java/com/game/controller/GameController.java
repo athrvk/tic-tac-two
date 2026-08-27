@@ -72,8 +72,8 @@ public class GameController {
         String desiredRoomId = normalizeRoomId((String) payload.get("roomId"));
         String username = principal.getName();
         JoinRoomResponse response = gameService.joinRoom(desiredRoomId, username);
-        String assignedRoomId = response.getRoomId();
-        String playerSymbol = response.getPlayerSymbol();
+        String assignedRoomId = response.roomId();
+        String playerSymbol = response.playerSymbol();
         boolean isRoomFull = gameService.isRoomFull(assignedRoomId);
 
         if (assignedRoomId.equals(desiredRoomId)) {
