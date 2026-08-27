@@ -146,6 +146,14 @@ export const TurnInfo = styled.div`
   transition: background 0.2s ease, color 0.2s ease;
 `;
 
+export const ShareRow = styled.div`
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: ${props => props.theme.spacing.sm};
+`;
+
 export const MutedNote = styled.div`
   text-align: center;
   margin: ${props => props.theme.spacing.sm} 0;

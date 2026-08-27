@@ -41,6 +41,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     // quick network blip reconnects as the same username and resumes the game
     // instead of handing the opponent a forfeit
     private static final long DISCONNECT_GRACE_MS = 4_000;
+    private static final String SUFFIX_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+    private static final java.security.SecureRandom SUFFIX_RANDOM = new java.security.SecureRandom();
 
     @Autowired
     private GameService gameService;
@@ -78,6 +80,22 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession session = new ConcurrentWebSocketSessionDecorator(
                 rawSession, SEND_TIME_LIMIT_MS, BUFFER_SIZE_LIMIT_BYTES);
 
+        if (!isStatus) {
+            // A duplicated browser tab carries the same sessionStorage
+            // identity; letting it in as-is would share one seat between two
+            // live tabs. Give the newcomer its own identity instead (a
+            // refresh's old session is already closed, so it keeps its name).
+            WebSocketSession existing = playersByUsername.get(username);
+            if (existing != null && existing.isOpen() && !existing.getId().equals(session.getId())) {
+                String candidate;
+                do {
+                    candidate = username + "-" + randomSuffix();
+                } while (playersByUsername.containsKey(candidate));
+                logger.info("Username {} already live in another tab, assigning {}", username, candidate);
+                username = candidate;
+            }
+        }
+
         lastSeen.put(session.getId(), System.currentTimeMillis());
         usernameBySessionId.put(session.getId(), username);
         if (isStatus) {
@@ -86,7 +104,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             playersByUsername.put(username, session);
             // A reconnect within the grace window keeps the player's seat
             pendingEvictions.remove(username);
+            // Tell the client its effective identity so it can adopt a rename
+            sendTo(session, Map.of("type", "welcome", "username", username));
         }
+    }
+
+    private static String randomSuffix() {
+        StringBuilder suffix = new StringBuilder(3);
+        for (int i = 0; i < 3; i++) {
+            suffix.append(SUFFIX_CHARS.charAt(SUFFIX_RANDOM.nextInt(SUFFIX_CHARS.length())));
+        }
+        return suffix.toString();
     }
 
     @Override

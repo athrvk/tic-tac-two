@@ -77,3 +77,23 @@ export const Button = styled.button`
     }
   `}
 `;
+
+// Small outlined pill for secondary action rows (e.g. share channels)
+export const ChipButton = styled.button`
+  padding: ${({ theme }) => `${theme.spacing.xs} ${theme.spacing.md}`};
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.primary};
+    background: ${({ theme }) => theme.colors.hover};
+  }
+`;

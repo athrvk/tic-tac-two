@@ -7,14 +7,14 @@ const BoardGrid = styled.div`
   display: grid;
   -ms-grid-columns: (1fr)[3];
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.6rem;
+  gap: 0.5rem;
   width: 100%;
-  max-width: 400px;
-  margin: 0.5rem auto;
+  max-width: 350px;
+  margin: 0.25rem auto;
 
   @media (max-width: 768px) {
-    max-width: 320px;
-    gap: 0.5rem;
+    max-width: 300px;
+    gap: 0.45rem;
   }
 `;
 
