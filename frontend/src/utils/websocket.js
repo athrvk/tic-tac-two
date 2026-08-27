@@ -120,7 +120,7 @@ class WebSocketService {
   }
 
   disconnect() {
-    // Deactivate even while disconnected — a client mid-reconnect would
+    // Deactivate even while disconnected - a client mid-reconnect would
     // otherwise keep retrying forever
     if (this.client) {
       this.client.deactivate();

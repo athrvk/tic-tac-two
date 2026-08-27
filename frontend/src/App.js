@@ -56,7 +56,7 @@ function GamePage() {
   const [gameStartTime, setGameStartTime] = useState(null);
   const [forfeitWin, setForfeitWin] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  // Generated once — regenerating on every render made the placeholder flicker
+  // Generated once - regenerating on every render made the placeholder flicker
   const [placeholderCode] = useState(() => generateUsername("-", 3, 6));
   // The room subscription callback is captured once, so live values it needs
   // must come through refs
@@ -222,7 +222,7 @@ function GamePage() {
         }
 
         if (gameWasLive) {
-          // Opponent abandoned a live game — the remaining player wins by
+          // Opponent abandoned a live game - the remaining player wins by
           // forfeit and stays in the room to invite the next challenger
           setForfeitWin(true);
         } else {
@@ -257,7 +257,7 @@ function GamePage() {
 
   const handleRandomMatch = (e) => {
     e.preventDefault();
-    // Ignore whatever is typed in the room-code box — random match always
+    // Ignore whatever is typed in the room-code box - random match always
     // joins an empty room id
     webSocketService.joinRoom('');
     showMessage('finding a match...', 0);
@@ -281,7 +281,7 @@ function GamePage() {
     }
 
     if (!webSocketService.connected) {
-      showMessage('reconnecting — try again in a moment');
+      showMessage('reconnecting, try again in a moment');
       return;
     }
 
@@ -303,7 +303,7 @@ function GamePage() {
     });
 
     if (!sent) {
-      showMessage('reconnecting — try again in a moment');
+      showMessage('reconnecting, try again in a moment');
       return;
     }
 
@@ -349,11 +349,11 @@ function GamePage() {
   }
 
   const handleInviteFriend = async () => {
-    // Share the bare link only — share targets that merge text and url
+    // Share the bare link only - share targets that merge text and url
     // would otherwise mangle the room code out of the invite.
     const result = await shareLink(buildInviteLink(roomId));
     if (result === 'shared') showMessage('invite sent!', 6000);
-    if (result === 'copied') showMessage('invite link copied — paste it anywhere', 6000);
+    if (result === 'copied') showMessage('invite link copied, paste it anywhere', 6000);
     if (result === 'failed') showMessage(buildInviteLink(roomId), 6000);
     trackInviteShared(result, isRoomFull ? 'in_game' : 'waiting');
   };
@@ -361,8 +361,8 @@ function GamePage() {
   const handleShareResult = async () => {
     const didWin = gameWinner && gameWinner.winner === playerSymbol;
     const text = didWin
-      ? 'i just won at tic-tac-two — tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
-      : 'i just played tic-tac-two — tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
+      ? 'i just won at tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
+      : 'i just played tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
     const result = await shareOrCopy({
       title: 'tic-tac-two',
       text,
@@ -399,7 +399,7 @@ function GamePage() {
             <>
               <Tagline>tic-tac-toe where moves vanish</Tagline>
               <RuleHint>
-                only your last 3 marks stay on the board — the oldest one
+                only your last 3 marks stay on the board. the oldest one
                 vanishes as you play. remember what's gone. no draws, ever.
               </RuleHint>
               <Controls>
@@ -429,7 +429,7 @@ function GamePage() {
               {!isRoomFull ? (
                 <>
                   {forfeitWin && (
-                    <TurnInfo $mine>you win — opponent left 🏆</TurnInfo>
+                    <TurnInfo $mine>you win, opponent left 🏆</TurnInfo>
                   )}
                   <GameInfo>
                     <WaitingDots>awaiting player</WaitingDots>
@@ -437,7 +437,7 @@ function GamePage() {
                   <RoomCode>{roomId}</RoomCode>
                   <Button onClick={handleInviteFriend}>invite a friend</Button>
                   <RuleHint>
-                    send the link — the game starts the moment they open it
+                    send the link, the game starts the moment they open it
                   </RuleHint>
                 </>
               ) : (

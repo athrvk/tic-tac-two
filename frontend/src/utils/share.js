@@ -5,13 +5,13 @@ export const buildInviteLink = (roomId) =>
 
 // Room codes never contain whitespace. Some share targets concatenate the
 // share text and URL into one string, so anything after whitespace (encoded
-// or not) in the ?room= value is garbage from a mangled share — drop it.
+// or not) in the ?room= value is garbage from a mangled share - drop it.
 export const sanitizeRoomCode = (raw) => {
   if (!raw) return '';
   return raw.trim().split(/\s/)[0];
 };
 
-// Invites share the bare link only — the Open Graph card carries the pitch,
+// Invites share the bare link only - the Open Graph card carries the pitch,
 // and a bare URL can't be mangled by share targets that merge text and url.
 export const shareLink = async (url) => {
   if (navigator.share) {

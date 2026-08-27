@@ -12,7 +12,7 @@ test('invite link joins the room, even when the share text got merged into the U
   // The address bar itself is the invite link
   await expect(a).toHaveURL(new RegExp(`room=${room}`));
 
-  // Some share targets append the share text to the URL — the room code must
+  // Some share targets append the share text to the URL - the room code must
   // still be recovered from a mangled link
   await b.goto(`/?room=${room}%20play%20tic-tac-two%20with%20me%20%E2%80%94%20join%20my%20room:`);
   await b.waitForSelector('text=you are', { timeout: 20000 });

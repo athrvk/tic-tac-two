@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** — when a 7th move is made, the oldest move disappears. Java 17 / Spring Boot 2.7.5 backend, React 18 (Create React App) frontend, deployed on Render via Docker. No database — all game state is in-memory.
+Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** - when a 7th move is made, the oldest move disappears. Java 17 / Spring Boot 2.7.5 backend, React 18 (Create React App) frontend, deployed on Render via Docker. No database - all game state is in-memory.
 
 ## Commands
 
@@ -55,10 +55,10 @@ The backend does **not** validate moves or detect winners. The frontend (`App.js
 `joinRoom` is forgiving: joining with no room ID finds any one-player room or creates one; joining a full/nonexistent room silently creates a new room and puts the player there (the client detects `assignedRoomId !== desiredRoomId`). First player in a room gets X, second gets O. `WebSocketEventListener` cleans up player/room mappings on disconnect.
 
 ### Frontend structure
-- `App.js` — nearly all game/connection state lives here; routes `/` (game) and `/status` (live dashboard using `utils/statusWebsocket.js` with a separate connection)
-- `utils/websocket.js` — singleton `webSocketService` wrapping @stomp/stompjs
-- `utils/analytics.js` — GA event tracking, called throughout the game flow
-- `styles/theme.js` + styled-components — high-contrast, e-ink-friendly palette (black on #f6f6f6, Georgia serif); use theme spacing values (xs/sm/md/lg) and keep components mobile-friendly
+- `App.js` - nearly all game/connection state lives here; routes `/` (game) and `/status` (live dashboard using `utils/statusWebsocket.js` with a separate connection)
+- `utils/websocket.js` - singleton `webSocketService` wrapping @stomp/stompjs
+- `utils/analytics.js` - GA event tracking, called throughout the game flow
+- `styles/theme.js` + styled-components - high-contrast, e-ink-friendly palette (black on #f6f6f6, Georgia serif); use theme spacing values (xs/sm/md/lg) and keep components mobile-friendly
 - `console.log` is stripped in production builds (`index.js`)
 
 ## Conventions

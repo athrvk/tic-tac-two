@@ -8,11 +8,11 @@ Try the game live at: [tic-tac-two.onrender.com](https://tic-tac-two.onrender.co
 
 ## 🚀 Features
 
-- **Modern Rules:** Experience new mechanics—only the last 6 moves remain on the board, creating unique strategies beyond classic Tic-Tac-Toe.
+- **Modern Rules:** Experience new mechanics: only the last 6 moves remain on the board, creating unique strategies beyond classic Tic-Tac-Toe.
 - **Multiplayer:** Play against another person locally, with automatic player symbol assignment.
 - **Dynamic Gameplay:** As older moves disappear, plan ahead for a moving target!
 - **Simple, Responsive UI:** Clean design, works great on desktop and mobile.
-- **Open Source:** All code is available here—contributions and ideas are welcome!
+- **Open Source:** All code is available here, contributions and ideas are welcome!
 
 ## 💡 What Makes It Unique?
 
