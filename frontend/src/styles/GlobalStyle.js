@@ -13,6 +13,16 @@ const GlobalStyle = createGlobalStyle`
     color: ${({ theme }) => theme.colors.text};
     background: ${({ theme }) => theme.colors.background};
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  button, input {
+    font-family: ${({ theme }) => theme.typography.fontFamily};
+  }
+
+  ::selection {
+    background: ${({ theme }) => theme.colors.primary};
+    color: ${({ theme }) => theme.colors.background};
   }
 
   h1, h2, h3, h4, h5, h6 {

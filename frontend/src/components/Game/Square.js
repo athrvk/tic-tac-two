@@ -1,16 +1,34 @@
 import React from 'react';
-import styled from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+
+const popIn = keyframes`
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+`;
+
+const fadeAway = keyframes`
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.15; }
+`;
 
 const StyledSquare = styled.button`
   width: 100%;
   position: relative;
   padding-top: 100%; /* Creates a square box */
-  border: ${(props) => (props.isWinning ? '4px' : '2px')} solid ${(props) => props.value ? props.theme.colors.mediumGray : props.theme.colors.lightGray}};
-  background: none;
-  font-size: 2rem;
+  border: 1px solid ${(props) => (props.$isWinning ? props.theme.colors.primary : props.theme.colors.border)};
+  border-radius: 12px;
+  background: ${(props) => (props.$isWinning ? props.theme.colors.primary : props.theme.colors.surface)};
+  font-size: 2.4rem;
   font-weight: bold;
-  cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
-  color: ${({ theme }) => theme.colors.text};
+  cursor: ${(props) => (props.disabled ? 'default' : 'pointer')};
+  box-shadow: 0 1px 2px rgba(20, 20, 20, 0.06);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: ${(props) => (props.$isWinning ? props.theme.colors.primary : props.theme.colors.hover)};
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(20, 20, 20, 0.1);
+  }
 
   .square-content {
     position: absolute;
@@ -22,22 +40,31 @@ const StyledSquare = styled.button`
     align-items: center;
     justify-content: center;
     font-size: inherit;
-
     font-style: ${(props) => (props.value === 'X' ? 'italic' : 'normal')};
+    color: ${(props) => {
+      if (props.$isWinning) return props.theme.colors.background;
+      if (props.value === 'X') return props.theme.colors.xInk;
+      if (props.value === 'O') return props.theme.colors.oInk;
+      return props.theme.colors.text;
+    }};
+    ${(props) => props.value && css`animation: ${popIn} 0.18s ease-out;`}
+    ${(props) => props.$isOldest && css`animation: ${fadeAway} 1.6s ease-in-out infinite;`}
   }
 
   @media (max-width: 768px) {
-    font-size: 1.5rem;
+    font-size: 2rem;
+    border-radius: 10px;
   }
 `;
 
-const Square = ({ value, onClick, disabled, isWinning }) => (
-  <StyledSquare 
-    onClick={onClick} 
+const Square = ({ value, onClick, disabled, isWinning, isOldest }) => (
+  <StyledSquare
+    onClick={onClick}
     value={value}
     disabled={disabled}
-    isWinning={isWinning}
-    style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
+    $isWinning={isWinning}
+    $isOldest={isOldest}
+    title={isOldest ? 'this mark vanishes next turn' : undefined}
   >
     <div className="square-content">
     {value}

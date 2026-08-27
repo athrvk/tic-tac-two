@@ -7,11 +7,11 @@ import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
 import { theme } from './styles/theme';
 import { Container } from './components/UI/Container';
-import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup } from './components/UI/Misc';
+import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup, OrDivider, Tagline, RuleHint, RoomCode, WaitingDots } from './components/UI/Misc';
 import { Input, Button, Label } from './components/UI/Input';
 import GlobalStyle from './styles/GlobalStyle';
 import { calculateWinner } from './utils/helper';
-import { buildInviteLink, shareOrCopy } from './utils/share';
+import { buildInviteLink, shareLink, shareOrCopy, sanitizeRoomCode } from './utils/share';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 import Confetti from 'react-confetti';
@@ -60,8 +60,9 @@ function GamePage() {
   }, [isCreatingRoom]);
 
   useEffect(() => {
-    // Invite links carry the room code as ?room=..., join automatically once connected
-    const urlRoom = new URLSearchParams(window.location.search).get('room');
+    // Invite links carry the room code as ?room=..., join automatically once connected.
+    // Sanitized because some share targets append the share text to the URL.
+    const urlRoom = sanitizeRoomCode(new URLSearchParams(window.location.search).get('room'));
     if (urlRoom) {
       setInputRoomId(urlRoom);
       webSocketService.setOnConnectCallback(() => {
@@ -288,13 +289,11 @@ function GamePage() {
   }
 
   const handleInviteFriend = async () => {
-    const result = await shareOrCopy({
-      title: 'tic-tac-two',
-      text: 'play tic-tac-two with me — tic-tac-toe where your moves vanish. join my room:',
-      url: buildInviteLink(roomId),
-    });
+    // Share the bare link only — share targets that merge text and url
+    // would otherwise mangle the room code out of the invite.
+    const result = await shareLink(buildInviteLink(roomId));
     if (result === 'shared') setMessage('invite sent!');
-    if (result === 'copied') setMessage('invite link copied!');
+    if (result === 'copied') setMessage('invite link copied — paste it anywhere');
     if (result === 'failed') setMessage(buildInviteLink(roomId));
     setTimeout(() => setMessage(''), 6000);
     trackInviteShared(result, isRoomFull ? 'in_game' : 'waiting');
@@ -329,6 +328,10 @@ function GamePage() {
     return "opponent's turn";
   }, [gameWinner, playerSymbol, xIsNext]);
 
+  const isMyTurn = (playerSymbol === 'X' && xIsNext) || (playerSymbol === 'O' && !xIsNext);
+  // With 6 marks down, the oldest one vanishes on the next move — fade it as a warning
+  const oldestIndex = history.length === 6 && !gameWinner ? history[0] : null;
+
 
 
   return (
@@ -337,53 +340,61 @@ function GamePage() {
       <Container>
         <>
           {!roomId ? (
-            <Controls>
-              <RoomControls>
-                <Label>room code</Label>
-                <Input
-                  type="text"
-                  placeholder={generateUsername("-", 3, 6)}
-                  value={inputRoomId}
-                  onChange={(e) => setInputRoomId(e.target.value)}
-                />
-                <RoomControlsButtonGroup>
-                  <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
-                  <Button onClick={handleJoinRoom} disabled={!inputRoomId}>join game</Button>
-                </RoomControlsButtonGroup>
-              </RoomControls>
-              <Button onClick={handleJoinRoom}>random match</Button>
-            </Controls>
+            <>
+              <Tagline>tic-tac-toe where moves vanish</Tagline>
+              <RuleHint>
+                only your last 3 marks stay on the board — the oldest one
+                fades away every turn. no draws, ever.
+              </RuleHint>
+              <Controls>
+                <RoomControls>
+                  <Label>room code</Label>
+                  <Input
+                    type="text"
+                    placeholder={generateUsername("-", 3, 6)}
+                    value={inputRoomId}
+                    onChange={(e) => setInputRoomId(e.target.value)}
+                  />
+                  <RoomControlsButtonGroup>
+                    <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
+                    <Button $ghost onClick={handleJoinRoom} disabled={!inputRoomId}>join game</Button>
+                  </RoomControlsButtonGroup>
+                </RoomControls>
+                <OrDivider>or</OrDivider>
+                <Button onClick={handleJoinRoom}>random match</Button>
+              </Controls>
+            </>
           ) : (
             <>
               {!isRoomFull ? (
                 <>
                   <GameInfo>
-                    awaiting player...
-                    <br />
-                    {inputRoomId && (
-                      <span>
-                        room:&nbsp;
-                        <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
-                      </span>
-                    )}
+                    <WaitingDots>awaiting player</WaitingDots>
                   </GameInfo>
+                  <RoomCode>{roomId}</RoomCode>
                   <Button onClick={handleInviteFriend}>invite a friend</Button>
+                  <RuleHint>
+                    send the link — the game starts the moment they open it
+                  </RuleHint>
                 </>
               ) : (
                 <>
                   <GameInfo>
-                    you are: <span style={{ fontWeight: '700', color: '#777' }}>{playerSymbol}</span>
-                    <br />
-                    room: <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
+                    you are{' '}
+                    <span style={{
+                      fontWeight: '700',
+                      fontStyle: playerSymbol === 'X' ? 'italic' : 'normal',
+                      color: playerSymbol === 'X' ? '#b3372a' : '#1f5f8b',
+                    }}>{playerSymbol}</span>
                   </GameInfo>
                   <Board
                     squares={squares}
                     onSquareClick={handleSquareClick}
                     disabled={disabled || !!gameWinner}
                     winners={gameWinner && gameWinner.line}
-                    winningLine={null}
+                    oldestIndex={oldestIndex}
                   />
-                  <TurnInfo>
+                  <TurnInfo $mine={gameWinner ? gameWinner.winner === playerSymbol : isMyTurn}>
                     {turnMessage}
                   </TurnInfo>
                 </>

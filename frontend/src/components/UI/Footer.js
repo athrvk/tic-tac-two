@@ -3,40 +3,34 @@ import styled from 'styled-components';
 import { theme } from '../../styles/theme';
 
 const FooterContainer = styled.footer`
-    background-color: ${theme.colors.lightGray};
+    background-color: ${theme.colors.background};
     position: fixed;
     width: 100%;
     bottom: 0;
-    color: ${theme.colors.text};
+    color: ${theme.colors.muted};
     padding: ${theme.spacing.sm};
+    border-top: 1px solid ${theme.colors.border};
     display: flex;
-    justify-content: space-around;
+    justify-content: center;
+    gap: ${theme.spacing.md};
     align-items: center;
     flex-wrap: wrap;
-    @media (max-width: 768px) {
-        flex-direction: column;
-        text-align: center;
-        padding: ${theme.spacing.xs};
-    }
 `;
 
 const FooterText = styled.p`
     font-family: ${theme.typography.fontFamily};
-    font-size: ${theme.typography.body.fontSize};
+    font-size: 0.8rem;
     font-weight: ${theme.typography.body.fontWeight};
     margin: 0;
-    @media (max-width: 768px) {
-        font-size: ${theme.typography.body.fontSize};
-        margin-top: ${theme.spacing.xs};
-    }
 `;
 
 const FooterLink = styled.a`
-    color: ${theme.colors.primary};
+    color: ${theme.colors.darkGray};
     text-decoration: none;
     margin-left: ${theme.spacing.xs};
     &:hover {
-        color: ${theme.colors.hover};
+        color: ${theme.colors.primary};
+        text-decoration: underline;
     }
 `;
 

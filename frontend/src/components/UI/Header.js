@@ -3,15 +3,17 @@ import styled from 'styled-components';
 import { theme } from '../../styles/theme';
 
 const HeaderContainer = styled.header`
-    background-color: ${theme.colors.lightGray};
+    background-color: ${theme.colors.background};
     color: ${theme.colors.text};
-    padding: ${theme.spacing.lg};
+    padding: ${theme.spacing.md} ${theme.spacing.lg};
+    border-bottom: 3px double ${theme.colors.primary};
     display: flex;
-    justify-content: space-around;
-    align-items: center;
+    justify-content: space-between;
+    align-items: baseline;
     flex-wrap: wrap;
     @media (max-width: 768px) {
         flex-direction: column;
+        align-items: center;
         text-align: center;
         padding: ${theme.spacing.md};
     }
@@ -22,6 +24,13 @@ const Title = styled.h1`
     font-size: ${theme.typography.heading.fontSize};
     font-weight: ${theme.typography.heading.fontWeight};
     margin: 0;
+    letter-spacing: -0.01em;
+
+    em {
+        font-style: italic;
+        color: ${theme.colors.xInk};
+    }
+
     @media (max-width: 768px) {
         font-size: ${theme.typography.subheading.fontSize};
     }
@@ -29,11 +38,12 @@ const Title = styled.h1`
 
 const Username = styled.span`
     font-family: ${theme.typography.fontFamily};
-    font-size: ${theme.typography.body.fontSize};
+    font-size: 0.9rem;
     font-weight: ${theme.typography.body.fontWeight};
+    color: ${theme.colors.muted};
+    font-style: italic;
     @media (max-width: 768px) {
-        font-size: ${theme.typography.subsubheading.fontSize};
-        margin-top: ${theme.spacing.sm};
+        margin-top: ${theme.spacing.xs};
     }
 `;
 
@@ -41,9 +51,9 @@ const Header = ({ username }) => {
     return (
         <HeaderContainer>
             <a href="/" style={{ textDecoration: 'none', color: theme.colors.text }}>
-                <Title>tic tac two</Title>
+                <Title>tic tac <em>two</em></Title>
             </a>
-            <Username>{username}</Username>
+            <Username>playing as {username}</Username>
         </HeaderContainer>
     );
 };
