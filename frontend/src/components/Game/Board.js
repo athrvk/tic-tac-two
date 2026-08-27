@@ -18,7 +18,7 @@ const BoardGrid = styled.div`
   }
 `;
 
-const Board = ({ squares, onSquareClick, disabled, winners, oldestIndex }) => (
+const Board = ({ squares, onSquareClick, disabled, winners }) => (
   <BoardGrid>
     {squares.map((value, index) => (
       <Square
@@ -26,7 +26,6 @@ const Board = ({ squares, onSquareClick, disabled, winners, oldestIndex }) => (
         value={value}
         disabled={disabled}
         isWinning={winners && winners.includes(index)}
-        isOldest={!winners && index === oldestIndex}
         onClick={() => onSquareClick(index)}
       />
     ))}

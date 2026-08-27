@@ -329,8 +329,6 @@ function GamePage() {
   }, [gameWinner, playerSymbol, xIsNext]);
 
   const isMyTurn = (playerSymbol === 'X' && xIsNext) || (playerSymbol === 'O' && !xIsNext);
-  // With 6 marks down, the oldest one vanishes on the next move — fade it as a warning
-  const oldestIndex = history.length === 6 && !gameWinner ? history[0] : null;
 
 
 
@@ -344,7 +342,7 @@ function GamePage() {
               <Tagline>tic-tac-toe where moves vanish</Tagline>
               <RuleHint>
                 only your last 3 marks stay on the board — the oldest one
-                fades away every turn. no draws, ever.
+                vanishes as you play. remember what's gone. no draws, ever.
               </RuleHint>
               <Controls>
                 <RoomControls>
@@ -392,7 +390,6 @@ function GamePage() {
                     onSquareClick={handleSquareClick}
                     disabled={disabled || !!gameWinner}
                     winners={gameWinner && gameWinner.line}
-                    oldestIndex={oldestIndex}
                   />
                   <TurnInfo $mine={gameWinner ? gameWinner.winner === playerSymbol : isMyTurn}>
                     {turnMessage}

@@ -6,11 +6,6 @@ const popIn = keyframes`
   to { transform: scale(1); opacity: 1; }
 `;
 
-const fadeAway = keyframes`
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.15; }
-`;
-
 const StyledSquare = styled.button`
   width: 100%;
   position: relative;
@@ -48,7 +43,6 @@ const StyledSquare = styled.button`
       return props.theme.colors.text;
     }};
     ${(props) => props.value && css`animation: ${popIn} 0.18s ease-out;`}
-    ${(props) => props.$isOldest && css`animation: ${fadeAway} 1.6s ease-in-out infinite;`}
   }
 
   @media (max-width: 768px) {
@@ -57,14 +51,12 @@ const StyledSquare = styled.button`
   }
 `;
 
-const Square = ({ value, onClick, disabled, isWinning, isOldest }) => (
+const Square = ({ value, onClick, disabled, isWinning }) => (
   <StyledSquare
     onClick={onClick}
     value={value}
     disabled={disabled}
     $isWinning={isWinning}
-    $isOldest={isOldest}
-    title={isOldest ? 'this mark vanishes next turn' : undefined}
   >
     <div className="square-content">
     {value}
