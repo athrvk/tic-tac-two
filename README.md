@@ -1,10 +1,12 @@
 # Tic-Tac-Two
 
-A modern twist on the classic Tic-Tac-Toe game, introducing new strategies and dynamic gameplay.
+[![your moves vanish. good luck.](docs/promo-card.png)](https://tic-tac-two.onrender.com)
+
+Tic-tac-toe was solved 40 years ago, so we broke it: only your **last 6 moves** stay on the board, and the oldest one vanishes right when you were counting on it. No draws. All mind games.
 
 ## 🕹️ Play Now
 
-Try the game live at: [tic-tac-two.onrender.com](https://tic-tac-two.onrender.com)
+Try the game live at: [tic-tac-two.onrender.com](https://tic-tac-two.onrender.com). No downloads, no signups, just a link and a grudge: play a friend in one tap.
 
 ## 🚀 Features
 
