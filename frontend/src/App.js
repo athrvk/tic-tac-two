@@ -54,10 +54,23 @@ function GamePage() {
   const isCreatingRoomRef = useRef(isCreatingRoom);
   const [waitingStartTime, setWaitingStartTime] = useState(null);
   const [gameStartTime, setGameStartTime] = useState(null);
+  const [forfeitWin, setForfeitWin] = useState(false);
+  // The room subscription callback is captured once, so live values it needs
+  // must come through refs
+  const isRoomFullRef = useRef(isRoomFull);
+  const gameWinnerRef = useRef(gameWinner);
 
   useEffect(() => {
     isCreatingRoomRef.current = isCreatingRoom;
   }, [isCreatingRoom]);
+
+  useEffect(() => {
+    isRoomFullRef.current = isRoomFull;
+  }, [isRoomFull]);
+
+  useEffect(() => {
+    gameWinnerRef.current = gameWinner;
+  }, [gameWinner]);
 
   useEffect(() => {
     // Invite links carry the room code as ?room=..., join automatically once connected.
@@ -155,6 +168,7 @@ function GamePage() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
+      setForfeitWin(false);
 
       // Track when second player joins and game actually starts
       if (data.isRoomFull && waitingStartTime) {
@@ -170,24 +184,27 @@ function GamePage() {
       }
     }
     if (data.type === 'player_disconnected' && data.roomId === roomId) {
+      const gameWasLive = isRoomFullRef.current && !gameWinnerRef.current;
       setIsRoomFull(false);
       setSquares(initialSquares);
       setHistory([]);
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('opponent left game, returning home...');
-
         // Track game abandonment due to disconnection
         if (gameStartTime) {
           const progress = getGameProgress(history.length);
           trackGameAbandoned('disconnect', progress);
         }
 
-        setTimeout(() => {
-          window.history.replaceState(null, '', window.location.pathname);
-          window.location.reload();
-        }, 3000);
+        if (gameWasLive) {
+          // Opponent abandoned a live game — the remaining player wins by
+          // forfeit and stays in the room to invite the next challenger
+          setForfeitWin(true);
+        } else {
+          setMessage('opponent left the room');
+          setTimeout(() => setMessage(''), 4000);
+        }
       }
     }
   };
@@ -366,6 +383,9 @@ function GamePage() {
             <>
               {!isRoomFull ? (
                 <>
+                  {forfeitWin && (
+                    <TurnInfo $mine>you win — opponent left 🏆</TurnInfo>
+                  )}
                   <GameInfo>
                     <WaitingDots>awaiting player</WaitingDots>
                   </GameInfo>
@@ -408,6 +428,7 @@ function GamePage() {
           )}
           {message && <Message>{message}</Message>}
           {gameWinner && gameWinner.winner === playerSymbol && <Confetti />}
+          {forfeitWin && <Confetti recycle={false} numberOfPieces={350} />}
           <GameInfo>
             players online: {activePlayers}
           </GameInfo>

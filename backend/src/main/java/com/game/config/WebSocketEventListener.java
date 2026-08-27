@@ -27,8 +27,11 @@ public class WebSocketEventListener {
 
     @EventListener
     public void handleWebSocketDisconnect(SessionDisconnectEvent event) {
+        // event.getUser() is set for abrupt closes too; the message headers
+        // are only a fallback
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
-        String username = Optional.ofNullable(headerAccessor.getUser())
+        String username = Optional.ofNullable(event.getUser())
+                .or(() -> Optional.ofNullable(headerAccessor.getUser()))
                 .map(Principal::getName)
                 .orElse(null);
         

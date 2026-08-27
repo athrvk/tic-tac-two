@@ -33,8 +33,12 @@ class WebSocketService {
       heartbeatOutgoing: 2000,
       webSocketFactory: () => {
         const isProd = process.env.NODE_ENV === 'production';
-        const host = isProd ? window.location.hostname : 'localhost:8080';
-        const url = `${isProd ? "https" : "http"}://${host}/ws?username=${this.username}`;
+        // In production the app is served same-origin by the backend, so keep
+        // scheme and host:port from the page (works on any domain and port)
+        const base = isProd
+          ? `${window.location.protocol}//${window.location.host}`
+          : 'http://localhost:8080';
+        const url = `${base}/ws?username=${this.username}`;
         const socket = new SockJS(url); // Update with backend URL
         socket.onopen = () => console.log('SockJS connection open');
         return socket;
