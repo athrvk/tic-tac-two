@@ -38,7 +38,7 @@ const Footer = () => {
     return (
         <FooterContainer>
             <FooterText>
-                Created by
+                created by
                 <FooterLink href="https://github.com/athrvk" target="_blank" rel="noopener noreferrer">
                     @athrvk
                 </FooterLink>

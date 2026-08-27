@@ -7,7 +7,7 @@ import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
 import { theme } from './styles/theme';
 import { Container } from './components/UI/Container';
-import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup, OrDivider, Tagline, RuleHint, RoomCode, WaitingDots } from './components/UI/Misc';
+import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup, OrDivider, Tagline, RuleHint, RoomCode, WaitingDots, MutedNote } from './components/UI/Misc';
 import { Input, Button, Label } from './components/UI/Input';
 import GlobalStyle from './styles/GlobalStyle';
 import { calculateWinner } from './utils/helper';
@@ -47,7 +47,8 @@ function GamePage() {
   const [inputRoomId, setInputRoomId] = useState('');
   const [message, setMessage] = useState('');
   const [playerSymbol, setPlayerSymbol] = useState('');
-  const [username] = useState(generateUsername("-", 0, 16));
+  // Truncation can leave a trailing separator, which reads as a typo
+  const [username] = useState(() => generateUsername("-", 0, 16).replace(/-+$/, ''));
   const [gameWinner, setGameWinner] = useState(null);
   const [isRoomFull, setIsRoomFull] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
@@ -144,7 +145,7 @@ function GamePage() {
     if (data.type === 'room_created' && isCreatingRoomRef.current) {
       setRoomId(data.roomId);
       webSocketService.joinRoom(data.roomId);
-      showMessage('connecting to ' + data.roomId, 0);
+      showMessage('connecting...', 0);
       setIsCreatingRoom(false);
     }
     if (data.type === 'active_players') {
@@ -160,7 +161,7 @@ function GamePage() {
       setHistory(data.history);
       setXIsNext(data.xIsNext);
       setIsRoomFull(data.isRoomFull);
-      showMessage(`joined room: ${data.roomId}`);
+      showMessage('room joined');
       setIsCreatingRoom(false);
       // Keep the room code in the URL so the address bar itself is a shareable invite
       window.history.replaceState(null, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomId)}`);
@@ -399,15 +400,15 @@ function GamePage() {
             <>
               <Tagline>tic-tac-toe where moves vanish</Tagline>
               <RuleHint>
-                only your last 3 marks stay on the board. the oldest one
-                vanishes as you play. remember what's gone. no draws, ever.
+                your last 3 marks stay on the board, older ones vanish.
+                remember what's gone. no draws, ever.
               </RuleHint>
               <Controls>
                 <RoomControls>
                   <Label>room code</Label>
                   <Input
                     type="text"
-                    placeholder={placeholderCode}
+                    placeholder={`e.g. ${placeholderCode}`}
                     value={inputRoomId}
                     onChange={(e) => setInputRoomId(e.target.value.replace(/\s+/g, ''))}
                     onKeyDown={(e) => { if (e.key === 'Enter' && inputRoomId) handleJoinRoom(e); }}
@@ -429,11 +430,12 @@ function GamePage() {
               {!isRoomFull ? (
                 <>
                   {forfeitWin && (
-                    <TurnInfo $mine>you win, opponent left 🏆</TurnInfo>
+                    <TurnInfo $mine $big>you win, opponent left 🏆</TurnInfo>
                   )}
                   <GameInfo>
-                    <WaitingDots>awaiting player</WaitingDots>
+                    <WaitingDots>waiting for an opponent</WaitingDots>
                   </GameInfo>
+                  <Label>room code</Label>
                   <RoomCode>{roomId}</RoomCode>
                   <Button onClick={handleInviteFriend}>invite a friend</Button>
                   <RuleHint>
@@ -456,7 +458,7 @@ function GamePage() {
                     disabled={disabled || !!gameWinner || !isConnected}
                     winners={gameWinner && gameWinner.line}
                   />
-                  <TurnInfo $mine={gameWinner ? gameWinner.winner === playerSymbol : isMyTurn}>
+                  <TurnInfo $mine={gameWinner ? gameWinner.winner === playerSymbol : isMyTurn} $big={!!gameWinner}>
                     {turnMessage}
                   </TurnInfo>
                 </>
@@ -475,9 +477,9 @@ function GamePage() {
           {message && <Message>{message}</Message>}
           {gameWinner && gameWinner.winner === playerSymbol && <Confetti recycle={false} numberOfPieces={500} />}
           {forfeitWin && <Confetti recycle={false} numberOfPieces={350} />}
-          <GameInfo>
-            players online: {activePlayers}
-          </GameInfo>
+          <MutedNote>
+            {activePlayers} player{activePlayers === 1 ? '' : 's'} online
+          </MutedNote>
         </>
       </Container>
       <Footer />
