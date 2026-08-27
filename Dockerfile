@@ -14,7 +14,7 @@ COPY frontend/src ./src
 RUN npm run build
 
 # Build backend
-FROM maven:3.9-eclipse-temurin-21-alpine AS backend-build
+FROM maven:3.9-eclipse-temurin-25-alpine AS backend-build
 WORKDIR /app/backend
 
 # Copy pom.xml first for dependency caching
@@ -29,7 +29,7 @@ COPY backend/src ./src
 RUN mvn clean package -B -DskipTests
 
 # Final runtime image
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 # Create non-root user for security
 RUN groupadd -r appgroup && \

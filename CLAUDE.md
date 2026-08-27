@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** - when a 7th move is made, the oldest move disappears. Java 21 / Spring Boot 3.5 backend, React 18 (Vite) frontend, deployed on Render via Docker. No database - all game state is in-memory.
+Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** - when a 7th move is made, the oldest move disappears. Java 25 (LTS) / Spring Boot 3.5 backend, React 19 (Vite) frontend, deployed on Render via Docker. No database - all game state is in-memory.
 
 ## Commands
 
