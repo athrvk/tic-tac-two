@@ -19,7 +19,7 @@ test('leaving a live game hands the remaining player a forfeit win, and the room
   await ctxB.close();
 
   // A is notified, declared winner by forfeit, and stays in the room
-  await a.waitForSelector('text=you win — opponent left', { timeout: 20000 });
+  await a.waitForSelector('text=you win, opponent left', { timeout: 20000 });
   await a.waitForSelector('text=invite a friend', { timeout: 5000 });
 
   // The room is still joinable and the next game starts on a clean board
@@ -48,7 +48,7 @@ test('leaving after the game already ended shows a plain notice, not a forfeit w
   await ctxB.close();
 
   await a.waitForSelector('text=opponent left the room', { timeout: 20000 });
-  expect(await a.locator('text=you win — opponent left').count()).toBe(0);
+  expect(await a.locator('text=you win, opponent left').count()).toBe(0);
 
   await ctxA.close();
 });

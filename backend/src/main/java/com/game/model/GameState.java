@@ -104,7 +104,7 @@ public class GameState {
                 return playerSymbols.get(username);
             }
 
-            // Room is full — the check-then-act in callers can race, so the
+            // Room is full - the check-then-act in callers can race, so the
             // capacity check must live inside the lock
             if (players >= 2) {
                 return null;

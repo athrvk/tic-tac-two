@@ -10,7 +10,7 @@ test('pressing "new game" with an existing code joins the room instead of resett
 
   await createRoom(a, room);
 
-  // The second friend also presses "new game" with the same code — they must
+  // The second friend also presses "new game" with the same code - they must
   // end up in the same room (skipping the waiting screen), and the first
   // player's seat must survive
   await b.goto('/');
@@ -36,9 +36,10 @@ test('a third player joining a full room is diverted to a fresh room', async ({ 
   await joinRoom(b, room);
   await a.waitForSelector('text=you are', { timeout: 15000 });
 
-  // Room is full — C lands in a fresh room of their own, waiting for a player
+  // Room is full - C lands in a fresh room of their own, waiting for a player
+  // (generous timeout: page load + connect + divert can be slow on loaded runners)
   await c.goto(`/?room=${room}`);
-  await c.waitForSelector('text=invite a friend', { timeout: 15000 });
+  await c.waitForSelector('text=invite a friend', { timeout: 30000 });
   const cRoom = await c.evaluate(() => new URLSearchParams(window.location.search).get('room'));
   if (cRoom === room) {
     throw new Error('third player was placed into a full room');

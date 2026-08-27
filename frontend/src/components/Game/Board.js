@@ -10,7 +10,7 @@ const BoardGrid = styled.div`
   gap: 0.6rem;
   width: 100%;
   max-width: 400px;
-  margin: 1rem auto;
+  margin: 0.5rem auto;
 
   @media (max-width: 768px) {
     max-width: 320px;

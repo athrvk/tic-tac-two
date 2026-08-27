@@ -40,7 +40,7 @@ public class GameService {
     public String createRoom(String roomId) {
         GameState existing = rooms.get(roomId);
         if (existing != null && existing.getPlayers() > 0) {
-            // Never reset a room that has players in it — the creator will
+            // Never reset a room that has players in it - the creator will
             // simply join it (e.g. two friends both pressing "new game" with
             // the same code end up in the same room)
             logger.info("Room {} already exists with players, joining instead of resetting", roomId);
@@ -92,7 +92,7 @@ public class GameService {
                 return new JoinRoomResponse(desiredRoomId, symbol);
             }
         }
-        // Desired room is full or does not exist — create a new room
+        // Desired room is full or does not exist - create a new room
         return joinNewRoom(username);
     }
 

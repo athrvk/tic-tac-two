@@ -1,5 +1,5 @@
 // src/styles/theme.js
-// Editorial "ink on paper" palette — high contrast, e-ink friendly,
+// Editorial "ink on paper" palette - high contrast, e-ink friendly,
 // with two ink accents so X and O read at a glance.
 export const theme = {
     colors: {
