@@ -313,22 +313,26 @@ function GamePage() {
       newSquares[removedIndex] = null;
     }
 
-    // Only commit the move locally once it has actually been sent, so an
-    // offline move never renders locally and silently fails to reach the opponent
-    const sent = webSocketService.sendGameState(roomId, {
-      squares: newSquares,
-      history: newHistory,
-      xIsNext: !xIsNext,
-    });
-
-    if (!sent) {
-      showMessage('reconnecting, try again in a moment');
-      return;
-    }
+    // Optimistically commit the move locally, then roll back if the server
+    // never acks it (e.g. the connection dropped in flight)
+    const prevSquares = squares;
+    const prevHistory = history;
+    const prevXIsNext = xIsNext;
 
     setSquares(newSquares);
     setHistory(newHistory);
     setXIsNext(!xIsNext);
+
+    webSocketService.sendMove(roomId, {
+      squares: newSquares,
+      history: newHistory,
+      xIsNext: !xIsNext,
+    }).catch(() => {
+      setSquares(prevSquares);
+      setHistory(prevHistory);
+      setXIsNext(prevXIsNext);
+      showMessage("move didn't go through, try again");
+    });
 
     // Track the move
     trackMoveMade(newHistory.length, index, playerSymbol);
@@ -360,10 +364,12 @@ function GamePage() {
     setGameStartTime(Date.now());
     startGameTimer();
 
-    webSocketService.sendGameState(roomId, {
+    webSocketService.sendMove(roomId, {
       squares: initialSquares,
       history: [],
       xIsNext: true,
+    }).catch(() => {
+      showMessage("move didn't go through, try again");
     });
   }
 

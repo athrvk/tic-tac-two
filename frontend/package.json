@@ -3,12 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@stomp/stompjs": "^7.3.0",
     "react": "^19.2.8",
     "react-confetti": "^6.4.0",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "sockjs-client": "^1.6.1",
     "styled-components": "^6.5.3",
     "unique-username-generator": "^1.5.1"
   },

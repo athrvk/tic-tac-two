@@ -1,184 +1,262 @@
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 import { trackWebSocketConnected, trackWebSocketError } from './analytics';
+
+const PING_INTERVAL_MS = 3000;
+const LIVENESS_TIMEOUT_MS = 10000;
+const RECONNECT_DELAY_MS = 3000;
+const ACK_TIMEOUT_MS = 2500;
 
 class WebSocketService {
   constructor() {
-    this.client = null;
+    this.socket = null;
     this.onMessageCallback = null;
     this.onJoinRoomCallback = null; // Add callback for join room
-    this.onConnectCallback = null; // Fired once the STOMP session is established
+    this.onConnectCallback = null; // Fired once the socket connection is established
     this.onDisconnectCallback = null; // Fired on graceful disconnect or socket close
     this.connectionStartTime = null;
     this.roomCallback = null; // Kept so a reconnect can re-subscribe to the room
-    this.roomSubscription = null;
+    this.roomId = null;
+    this.username = null;
+    this.explicitDisconnect = false;
+    this.pingTimer = null;
+    this.livenessTimer = null;
+    this.lastMessageAt = null;
+    this.pendingAcks = new Map(); // moveId -> { resolve, reject, timeoutId }
   }
 
-  // onDisconnect only fires for graceful disconnects (stompjs v7), so this
-  // getter is the source of truth for connection state instead of a mirrored field
   get connected() {
-    return !!this.client && this.client.connected;
+    return !!this.socket && this.socket.readyState === WebSocket.OPEN;
   }
 
   connect(username) {
+    this.explicitDisconnect = false;
     this.connectionStartTime = Date.now();
     this.username = encodeURIComponent(username);
-    this.client = new Client({
-      // brokerURL: `ws://localhost:8080/ws`, // Update with backend WebSocket endpoint if different
-      connectHeaders: {
-        username: this.username,
-        // Add headers if needed
-      },
-      disconnectHeaders: {
-        username: this.username,
-      },
-      logRawCommunication: true, // Enable raw communication logging
-      debug: (str) => {
-        console.log("[STOMP DEBUG] - " + str);
-      },
-      reconnectDelay: 3000,
-      heartbeatIncoming: 2000,
-      heartbeatOutgoing: 2000,
-      webSocketFactory: () => {
-        const isProd = import.meta.env.PROD;
-        // In production the app is served same-origin by the backend, so keep
-        // scheme and host:port from the page (works on any domain and port)
-        const base = isProd
-          ? `${window.location.protocol}//${window.location.host}`
-          : 'http://localhost:8080';
-        const url = `${base}/ws?username=${this.username}`;
-        const socket = new SockJS(url); // Update with backend URL
-        socket.onopen = () => console.log('SockJS connection open');
-        return socket;
-      }, // Update with backend URL
-      onConnect: (frame) => {
-        console.log('STOMP connected as : ' + username);
-        
-        // Track successful WebSocket connection
-        if (this.connectionStartTime) {
-          const connectionTime = Date.now() - this.connectionStartTime;
-          trackWebSocketConnected(connectionTime);
-        }
-        
-        // Subscribe to public topic for room events
-        this.client.subscribe('/topic/public', (message) => {
-          const data = JSON.parse(message.body);
-          console.log("[/topic/public] - Received message:", data);
-          if (this.onMessageCallback) {
-            this.onMessageCallback(data);
-          }
-        });
-        // Subscribe to user-specific queue for join room responses
-        this.client.subscribe(`/user/queue/join`, (message) => {
-          const data = JSON.parse(message.body);
-          console.log(`[/user/queue/join] - Received message:`, data);
-          if (this.onJoinRoomCallback) {
-            this.onJoinRoomCallback(data);
-          }
-        });
-        // Room creation confirmations are sent only to the creator
-        this.client.subscribe(`/user/queue/roomCreated`, (message) => {
-          const data = JSON.parse(message.body);
-          console.log(`[/user/queue/roomCreated] - Received message:`, data);
-          if (this.onMessageCallback) {
-            this.onMessageCallback(data);
-          }
-        });
-        if (this.onConnectCallback) {
-          this.onConnectCallback();
-        }
-        // stompjs does not restore subscriptions across a reconnect, so
-        // re-subscribe and re-join the room server-side if we had one
-        if (this.roomId && this.roomCallback) {
-          this.subscribe(this.roomId, this.roomCallback);
-          this.joinRoom(this.roomId);
-        }
-      },
-      onDisconnect: (frame) => {
-        console.log('WebSocket disconnected: ' + username);
-        if (this.onDisconnectCallback) {
-          this.onDisconnectCallback();
-        }
-      },
-      onWebSocketClose: (event) => {
-        console.log('WebSocket connection closed');
-        if (this.onDisconnectCallback) {
-          this.onDisconnectCallback();
-        }
-      },
-      onStompError: (frame) => {
-        console.error('Broker reported error: ' + frame.headers['message']);
-        console.error('Additional details: ' + frame.body);
-        
-        // Track WebSocket errors
-        const errorType = frame.headers['message'] || 'unknown_error';
-        trackWebSocketError(errorType);
-      },
-    });
-
-    this.client.activate();
+    this._openSocket();
   }
 
-  disconnect() {
-    // Deactivate even while disconnected - a client mid-reconnect would
-    // otherwise keep retrying forever
-    if (this.client) {
-      this.client.deactivate();
-    }
+  _buildUrl() {
+    const isProd = import.meta.env.PROD;
+    const base = isProd
+      ? `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}`
+      : 'ws://localhost:8080';
+    return `${base}/ws?username=${this.username}`;
   }
 
-  subscribe(roomId, callback) {
-    if (!this.client || !this.connected) return;
-    if (this.roomSubscription) {
+  _openSocket() {
+    const url = this._buildUrl();
+    const socket = new WebSocket(url);
+    this.socket = socket;
+
+    socket.onopen = () => {
+      console.log('WebSocket connection open');
+
+      if (this.connectionStartTime) {
+        const connectionTime = Date.now() - this.connectionStartTime;
+        trackWebSocketConnected(connectionTime);
+      }
+
+      this._touchLiveness();
+      this._startHeartbeat();
+
+      if (this.onConnectCallback) {
+        this.onConnectCallback();
+      }
+
+      // The server does not remember subscriptions across a reconnect, so
+      // re-join the room server-side if we had one
+      if (this.roomId && this.roomCallback) {
+        this._sendRaw({ type: 'join', roomId: this.roomId });
+      }
+    };
+
+    socket.onmessage = (event) => {
+      this._touchLiveness();
+      let data;
       try {
-        this.roomSubscription.unsubscribe();
+        data = JSON.parse(event.data);
       } catch (e) {
-        // Previous subscription may belong to a dead connection
+        console.error('Failed to parse WebSocket message', e);
+        return;
+      }
+      console.log('[ws] - Received message:', data);
+      this._dispatch(data);
+    };
+
+    socket.onclose = () => {
+      this._onSocketGone(socket);
+    };
+
+    socket.onerror = (event) => {
+      console.error('WebSocket error', event);
+      trackWebSocketError('websocket_error');
+    };
+  }
+
+  // Idempotent teardown for a socket that is gone (closed, or forced closed
+  // by the liveness timeout). Chromium defers the actual close event while
+  // offline, so the liveness timeout calls this directly instead of waiting
+  // for onclose to eventually fire.
+  _onSocketGone(socket) {
+    if (socket._handledGone) return;
+    socket._handledGone = true;
+    console.log('WebSocket connection closed');
+    if (this.socket === socket) {
+      this._stopHeartbeat();
+      this._rejectAllPending('connection closed');
+      if (this.onDisconnectCallback) {
+        this.onDisconnectCallback();
+      }
+      if (!this.explicitDisconnect) {
+        setTimeout(() => {
+          if (!this.explicitDisconnect && this.socket === socket) {
+            this._openSocket();
+          }
+        }, RECONNECT_DELAY_MS);
       }
     }
-    this.roomSubscription = this.client.subscribe(`/topic/room/${roomId}`, (message) => {
-      const data = JSON.parse(message.body);
-      console.log(`[/topic/room/${roomId}] - Received message:`, data);
-      callback(data);
-    });
-    this.roomId = roomId;
-    this.roomCallback = callback;
   }
 
-  sendGameState(roomId, gameState) {
-    if (!this.client || !this.connected) return false;
+  _dispatch(data) {
+    switch (data.type) {
+      case 'room_created':
+      case 'active_players':
+        if (this.onMessageCallback) this.onMessageCallback(data);
+        break;
+      case 'room_joined':
+        if (this.onJoinRoomCallback) this.onJoinRoomCallback(data);
+        break;
+      case 'player_joined':
+      case 'player_disconnected':
+        if (this.roomCallback) this.roomCallback(data);
+        break;
+      case 'game_state':
+        if (this.roomCallback) {
+          this.roomCallback({ type: 'game_state_updated', gameState: data.gameState });
+        }
+        break;
+      case 'ack':
+        this._resolveAck(data.moveId);
+        break;
+      case 'pong':
+        // liveness already updated above
+        break;
+      default:
+        break;
+    }
+  }
+
+  _touchLiveness() {
+    this.lastMessageAt = Date.now();
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this.pingTimer = setInterval(() => {
+      this._sendRaw({ type: 'ping' });
+    }, PING_INTERVAL_MS);
+    this.livenessTimer = setInterval(() => {
+      if (this.lastMessageAt && Date.now() - this.lastMessageAt > LIVENESS_TIMEOUT_MS) {
+        console.log('WebSocket liveness timeout, forcing close');
+        const socket = this.socket;
+        if (socket) {
+          try {
+            socket.close();
+          } catch (e) {
+            // ignore
+          }
+          // The close event can be deferred indefinitely (e.g. while the
+          // network is offline), so tear down immediately rather than
+          // waiting for onclose.
+          this._onSocketGone(socket);
+        }
+      }
+    }, PING_INTERVAL_MS);
+  }
+
+  _stopHeartbeat() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.livenessTimer) clearInterval(this.livenessTimer);
+    this.pingTimer = null;
+    this.livenessTimer = null;
+  }
+
+  _sendRaw(payload) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
     try {
-      this.client.publish({
-        destination: `/app/updateGameState`,
-        body: JSON.stringify({ roomId, gameState }),
-      });
+      this.socket.send(JSON.stringify(payload));
       return true;
     } catch (e) {
       return false;
     }
   }
 
-  createRoom(username, roomId) { // Accept username as parameter
-    if (!this.client || !this.connected) return;
-    this.client.publish({
-      destination: '/app/createRoom',
-      body: JSON.stringify({ username, roomId }), // Send username to backend
+  _resolveAck(moveId) {
+    const pending = this.pendingAcks.get(moveId);
+    if (!pending) return;
+    clearTimeout(pending.timeoutId);
+    this.pendingAcks.delete(moveId);
+    pending.resolve();
+  }
+
+  _rejectAllPending(reason) {
+    this.pendingAcks.forEach((pending) => {
+      clearTimeout(pending.timeoutId);
+      pending.reject(new Error(reason));
+    });
+    this.pendingAcks.clear();
+  }
+
+  disconnect() {
+    this.explicitDisconnect = true;
+    this._stopHeartbeat();
+    this._rejectAllPending('disconnected');
+    this.roomId = null;
+    this.roomCallback = null;
+    if (this.socket) {
+      this.socket.close();
+    }
+  }
+
+  subscribe(roomId, callback) {
+    this.roomId = roomId;
+    this.roomCallback = callback;
+  }
+
+  sendMove(roomId, gameState) {
+    if (!this.connected) {
+      return Promise.reject(new Error('not connected'));
+    }
+    const moveId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingAcks.delete(moveId);
+        reject(new Error('move ack timeout'));
+      }, ACK_TIMEOUT_MS);
+      this.pendingAcks.set(moveId, { resolve, reject, timeoutId });
+      const sent = this._sendRaw({ type: 'move', roomId, moveId, gameState });
+      if (!sent) {
+        clearTimeout(timeoutId);
+        this.pendingAcks.delete(moveId);
+        reject(new Error('send failed'));
+      }
     });
   }
 
-  joinRoom(roomId) { // Accept username as parameter
-    if (!this.client || !this.connected) return;
-    this.client.publish({
-      destination: '/app/joinRoom',
-      body: JSON.stringify({ roomId }), // Send roomId and username to backend
-    });
+  createRoom(username, roomId) {
+    if (!this.connected) return;
+    this._sendRaw({ type: 'create', roomId });
+  }
+
+  joinRoom(roomId) {
+    if (!this.connected) return;
+    this._sendRaw({ type: 'join', roomId });
   }
 
   setOnMessageCallback(callback) {
     this.onMessageCallback = callback;
   }
 
-  setOnJoinRoomCallback(callback) { // Add method to set join room callback
+  setOnJoinRoomCallback(callback) {
     this.onJoinRoomCallback = callback;
   }
 

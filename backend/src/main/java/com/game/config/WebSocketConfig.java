@@ -1,77 +1,27 @@
 package com.game.config;
 
-import java.security.Principal;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.game.websocket.GameWebSocketHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.simp.config.ChannelRegistration;
-import org.springframework.messaging.simp.config.MessageBrokerRegistry;
-import org.springframework.messaging.simp.stomp.StompCommand;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.messaging.support.MessageHeaderAccessor;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.web.socket.config.annotation.*;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 @Configuration
-@EnableWebSocketMessageBroker
-public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
 
-    @SuppressWarnings("unused")
-    private static final Logger logger = LoggerFactory.getLogger(WebSocketConfig.class);
+    @Autowired
+    private GameWebSocketHandler gameWebSocketHandler;
 
     @Value("${ALLOWED_ORIGINS:}")
     private String[] allowedOrigins;
 
-    // Configure message broker
     @Override
-    public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
-        // Heartbeats need a scheduler; without them a vanished peer (network
-        // drop, killed app) is only detected on TCP timeout
-        ThreadPoolTaskScheduler heartbeatScheduler = new ThreadPoolTaskScheduler();
-        heartbeatScheduler.setPoolSize(1);
-        heartbeatScheduler.setThreadNamePrefix("ws-heartbeat-");
-        heartbeatScheduler.initialize();
-        // Enable a simple memory-based message broker to carry the messages back to the client
-        config.enableSimpleBroker("/topic", "/queue") // Enable "/topic" and "/queue" for message brokers
-                .setHeartbeatValue(new long[]{3000, 3000})
-                .setTaskScheduler(heartbeatScheduler);
-        // Set the prefix for messages that are bound for methods annotated with @MessageMapping
-        config.setApplicationDestinationPrefixes("/app"); // Prefix for endpoints
-        config.setUserDestinationPrefix("/user"); // Prefix for user-specific destinations
-    }
-
-    // Register STOMP endpoints
-    @Override
-    public void registerStompEndpoints(@NonNull StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(allowedOrigins) // Allow all origins for simplicity, Adjust as needed for CORS
-                .withSockJS(); // Use SockJS for fallback options
-    }
-
-    @Override
-    public void configureClientInboundChannel(@NonNull ChannelRegistration registration) {
-        registration.interceptors(new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
-                StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-                if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    String username = accessor.getFirstNativeHeader("username");
-                    if (username != null) {
-                        accessor.setUser(new Principal() {
-                            @Override
-                            public String getName() {
-                                return username;
-                            }
-                        });
-                    }
-                }
-                return message;
-            }
-        });
+    public void registerWebSocketHandlers(@NonNull WebSocketHandlerRegistry registry) {
+        registry.addHandler(gameWebSocketHandler, "/ws")
+                .setAllowedOriginPatterns(allowedOrigins);
     }
 }
