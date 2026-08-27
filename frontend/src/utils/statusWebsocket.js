@@ -43,8 +43,11 @@ class StatusWebSocketService {
             heartbeatOutgoing: 2000,
             webSocketFactory: () => {
                 const isProd = process.env.NODE_ENV === 'production';
-                const host = isProd ? window.location.hostname : 'localhost:8080';
-                const url = `${isProd ? "https" : "http"}://${host}/ws?username=${statusId}&type=status`;
+                // Same-origin in production: keep scheme and host:port from the page
+                const base = isProd
+                    ? `${window.location.protocol}//${window.location.host}`
+                    : 'http://localhost:8080';
+                const url = `${base}/ws?username=${statusId}&type=status`;
                 const socket = new SockJS(url);
                 socket.onopen = () => console.log('Status SockJS connection open');
                 return socket;

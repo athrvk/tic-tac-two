@@ -54,10 +54,40 @@ function GamePage() {
   const isCreatingRoomRef = useRef(isCreatingRoom);
   const [waitingStartTime, setWaitingStartTime] = useState(null);
   const [gameStartTime, setGameStartTime] = useState(null);
+  const [forfeitWin, setForfeitWin] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  // Generated once — regenerating on every render made the placeholder flicker
+  const [placeholderCode] = useState(() => generateUsername("-", 3, 6));
+  // The room subscription callback is captured once, so live values it needs
+  // must come through refs
+  const isRoomFullRef = useRef(isRoomFull);
+  const gameWinnerRef = useRef(gameWinner);
+  // onConnect re-fires on every reconnect, so the invite-link auto-join
+  // must only run once, on the very first connection
+  const hasAutoJoinedRef = useRef(false);
+  // The reconnecting banner is only meaningful after a connection existed
+  const hasEverConnectedRef = useRef(false);
+  // Tracks the pending auto-clear so a new message can't be wiped early by
+  // a stale timeout from a previous message
+  const messageTimer = useRef(null);
+
+  const showMessage = (text, ms = 4000) => {
+    setMessage(text);
+    clearTimeout(messageTimer.current);
+    if (ms) messageTimer.current = setTimeout(() => setMessage(''), ms);
+  };
 
   useEffect(() => {
     isCreatingRoomRef.current = isCreatingRoom;
   }, [isCreatingRoom]);
+
+  useEffect(() => {
+    isRoomFullRef.current = isRoomFull;
+  }, [isRoomFull]);
+
+  useEffect(() => {
+    gameWinnerRef.current = gameWinner;
+  }, [gameWinner]);
 
   useEffect(() => {
     // Invite links carry the room code as ?room=..., join automatically once connected.
@@ -65,12 +95,20 @@ function GamePage() {
     const urlRoom = sanitizeRoomCode(new URLSearchParams(window.location.search).get('room'));
     if (urlRoom) {
       setInputRoomId(urlRoom);
-      webSocketService.setOnConnectCallback(() => {
-        webSocketService.joinRoom(urlRoom);
-        setMessage('joining game...');
-        trackGameStartIntent('invite_link');
-      });
     }
+    // Single onConnect callback shared by everyone: it always reflects connection
+    // state, and only does the invite-link auto-join on the first connect
+    webSocketService.setOnConnectCallback(() => {
+      hasEverConnectedRef.current = true;
+      setIsConnected(true);
+      if (urlRoom && !hasAutoJoinedRef.current) {
+        hasAutoJoinedRef.current = true;
+        webSocketService.joinRoom(urlRoom);
+        showMessage('joining game...', 0);
+        trackGameStartIntent('invite_link');
+      }
+    });
+    webSocketService.setOnDisconnectCallback(() => setIsConnected(false));
     webSocketService.connect(username);
     webSocketService.setOnMessageCallback(handleReceiveMessage);
     webSocketService.setOnJoinRoomCallback(handleJoinRoomResponse); // Set join room callback
@@ -106,7 +144,7 @@ function GamePage() {
     if (data.type === 'room_created' && isCreatingRoomRef.current) {
       setRoomId(data.roomId);
       webSocketService.joinRoom(data.roomId);
-      setMessage('connecting to ' + data.roomId);
+      showMessage('connecting to ' + data.roomId, 0);
       setIsCreatingRoom(false);
     }
     if (data.type === 'active_players') {
@@ -122,8 +160,7 @@ function GamePage() {
       setHistory(data.history);
       setXIsNext(data.xIsNext);
       setIsRoomFull(data.isRoomFull);
-      setMessage(`joined room: ${data.roomId}`);
-      setTimeout(() => setMessage(''), 4000);
+      showMessage(`joined room: ${data.roomId}`);
       setIsCreatingRoom(false);
       // Keep the room code in the URL so the address bar itself is a shareable invite
       window.history.replaceState(null, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomId)}`);
@@ -155,6 +192,7 @@ function GamePage() {
     }
     if (data.type === 'player_joined' && data.roomId === roomId) {
       setIsRoomFull(data.isRoomFull);
+      setForfeitWin(false);
 
       // Track when second player joins and game actually starts
       if (data.isRoomFull && waitingStartTime) {
@@ -170,24 +208,26 @@ function GamePage() {
       }
     }
     if (data.type === 'player_disconnected' && data.roomId === roomId) {
+      const gameWasLive = isRoomFullRef.current && !gameWinnerRef.current;
       setIsRoomFull(false);
       setSquares(initialSquares);
       setHistory([]);
       setXIsNext(true);
       setGameWinner(null);
       if (data.username !== username) {
-        setMessage('opponent left game, returning home...');
-
         // Track game abandonment due to disconnection
         if (gameStartTime) {
           const progress = getGameProgress(history.length);
           trackGameAbandoned('disconnect', progress);
         }
 
-        setTimeout(() => {
-          window.history.replaceState(null, '', window.location.pathname);
-          window.location.reload();
-        }, 3000);
+        if (gameWasLive) {
+          // Opponent abandoned a live game — the remaining player wins by
+          // forfeit and stays in the room to invite the next challenger
+          setForfeitWin(true);
+        } else {
+          showMessage('opponent left the room');
+        }
       }
     }
   };
@@ -196,7 +236,7 @@ function GamePage() {
     e.preventDefault();
     setIsCreatingRoom(true); // Set the flag before creating room
     webSocketService.createRoom(username, inputRoomId.trim());
-    setMessage('creating room...');
+    showMessage('creating room...', 0);
 
     // Track game start intent and room creation
     trackGameStartIntent('create_room');
@@ -207,12 +247,21 @@ function GamePage() {
     e.preventDefault();
     // if (inputRoomId.trim() !== '') {
     webSocketService.joinRoom(inputRoomId.trim());
-    setMessage('joining game...');
+    showMessage('joining game...', 0);
 
     // Track game start intent
     const method = inputRoomId.trim() ? 'join_room' : 'random_match';
     trackGameStartIntent(method);
     // }
+  };
+
+  const handleRandomMatch = (e) => {
+    e.preventDefault();
+    // Ignore whatever is typed in the room-code box — random match always
+    // joins an empty room id
+    webSocketService.joinRoom('');
+    showMessage('finding a match...', 0);
+    trackGameStartIntent('random_match');
   };
 
   const handleSquareClick = (index) => {
@@ -221,14 +270,18 @@ function GamePage() {
       (playerSymbol === 'O' && !xIsNext);
 
     if (!isPlayersTurn) {
-      setMessage("wait your turn");
-      setTimeout(() => setMessage(''), 4000);
+      showMessage("wait your turn");
       return;
     } else {
-      setMessage('');
+      showMessage('', 0);
     }
 
     if (squares[index] || calculateWinner(squares)) {
+      return;
+    }
+
+    if (!webSocketService.connected) {
+      showMessage('reconnecting — try again in a moment');
       return;
     }
 
@@ -239,6 +292,19 @@ function GamePage() {
     if (newHistory.length > 6) {
       const removedIndex = newHistory.shift();
       newSquares[removedIndex] = null;
+    }
+
+    // Only commit the move locally once it has actually been sent, so an
+    // offline move never renders locally and silently fails to reach the opponent
+    const sent = webSocketService.sendGameState(roomId, {
+      squares: newSquares,
+      history: newHistory,
+      xIsNext: !xIsNext,
+    });
+
+    if (!sent) {
+      showMessage('reconnecting — try again in a moment');
+      return;
     }
 
     setSquares(newSquares);
@@ -256,12 +322,6 @@ function GamePage() {
       trackGameCompleted(gameResult, gameDuration, newHistory.length, winner.winner);
       incrementSessionGameCount();
     }
-
-    webSocketService.sendGameState(roomId, {
-      squares: newSquares,
-      history: newHistory,
-      xIsNext: !xIsNext,
-    });
   };
 
   const handleNewGame = (e) => {
@@ -292,10 +352,9 @@ function GamePage() {
     // Share the bare link only — share targets that merge text and url
     // would otherwise mangle the room code out of the invite.
     const result = await shareLink(buildInviteLink(roomId));
-    if (result === 'shared') setMessage('invite sent!');
-    if (result === 'copied') setMessage('invite link copied — paste it anywhere');
-    if (result === 'failed') setMessage(buildInviteLink(roomId));
-    setTimeout(() => setMessage(''), 6000);
+    if (result === 'shared') showMessage('invite sent!', 6000);
+    if (result === 'copied') showMessage('invite link copied — paste it anywhere', 6000);
+    if (result === 'failed') showMessage(buildInviteLink(roomId), 6000);
     trackInviteShared(result, isRoomFull ? 'in_game' : 'waiting');
   };
 
@@ -309,9 +368,8 @@ function GamePage() {
       text,
       url: `${window.location.origin}${window.location.pathname}`,
     });
-    if (result === 'shared') setMessage('shared!');
-    if (result === 'copied') setMessage('copied, paste it anywhere!');
-    setTimeout(() => setMessage(''), 4000);
+    if (result === 'shared') showMessage('shared!');
+    if (result === 'copied') showMessage('copied, paste it anywhere!');
     trackResultShared(result, didWin ? 'win' : 'lose');
   };
 
@@ -349,9 +407,13 @@ function GamePage() {
                   <Label>room code</Label>
                   <Input
                     type="text"
-                    placeholder={generateUsername("-", 3, 6)}
+                    placeholder={placeholderCode}
                     value={inputRoomId}
-                    onChange={(e) => setInputRoomId(e.target.value)}
+                    onChange={(e) => setInputRoomId(e.target.value.replace(/\s+/g, ''))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && inputRoomId) handleJoinRoom(e); }}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
                   <RoomControlsButtonGroup>
                     <Button onClick={handleCreateRoom} disabled={!inputRoomId}>new game</Button>
@@ -359,13 +421,16 @@ function GamePage() {
                   </RoomControlsButtonGroup>
                 </RoomControls>
                 <OrDivider>or</OrDivider>
-                <Button onClick={handleJoinRoom}>random match</Button>
+                <Button onClick={handleRandomMatch}>random match</Button>
               </Controls>
             </>
           ) : (
             <>
               {!isRoomFull ? (
                 <>
+                  {forfeitWin && (
+                    <TurnInfo $mine>you win — opponent left 🏆</TurnInfo>
+                  )}
                   <GameInfo>
                     <WaitingDots>awaiting player</WaitingDots>
                   </GameInfo>
@@ -388,7 +453,7 @@ function GamePage() {
                   <Board
                     squares={squares}
                     onSquareClick={handleSquareClick}
-                    disabled={disabled || !!gameWinner}
+                    disabled={disabled || !!gameWinner || !isConnected}
                     winners={gameWinner && gameWinner.line}
                   />
                   <TurnInfo $mine={gameWinner ? gameWinner.winner === playerSymbol : isMyTurn}>
@@ -406,8 +471,10 @@ function GamePage() {
               )}
             </>
           )}
+          {!isConnected && hasEverConnectedRef.current && <Message>reconnecting…</Message>}
           {message && <Message>{message}</Message>}
-          {gameWinner && gameWinner.winner === playerSymbol && <Confetti />}
+          {gameWinner && gameWinner.winner === playerSymbol && <Confetti recycle={false} numberOfPieces={500} />}
+          {forfeitWin && <Confetti recycle={false} numberOfPieces={350} />}
           <GameInfo>
             players online: {activePlayers}
           </GameInfo>
