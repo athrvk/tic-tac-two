@@ -22,7 +22,7 @@ const canShareFiles = (() => {
     return false;
   }
 })();
-import { renderShareCard, shareCardImage } from './utils/shareCard';
+import { renderShareCard, shareCardImage, copyCardToClipboard } from './utils/shareCard';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 
@@ -514,13 +514,35 @@ function GamePage() {
   // One-tap platform shares: pre-filled intents, the OG card rides along on
   // the link unfurl. Instagram has no web share URL, so the card button's
   // native sheet is the only route there.
-  const handleShareIntent = (channel) => {
+  const handleShareIntent = async (channel) => {
     const intents = {
-      x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
+      x: `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(gameUrl)}`,
       whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${gameUrl}`)}`,
     };
-    window.open(intents[channel], '_blank', 'noopener');
+    if (channel === 'x') {
+      // Open synchronously on the click's user-activation, before any await,
+      // or popup blockers will swallow it.
+      window.open(intents.x, '_blank', 'noopener');
+      try {
+        const blob = await renderShareCard({
+          result: didWin ? 'win' : 'lose',
+          squares,
+          winningLine: gameWinner && gameWinner.line,
+          stats: {
+            durationMs: gameDurationRef.current,
+            moves: gameMovesRef.current,
+            streak: didWin ? streakRef.current : 0,
+          },
+        });
+        const copied = await copyCardToClipboard(blob);
+        if (copied) showMessage('victory card copied, paste it into your post', 8000);
+      } catch (err) {
+        // card copy is a bonus; the link's OG image still unfurls either way
+      }
+    } else {
+      window.open(intents[channel], '_blank', 'noopener');
+    }
     trackResultShared(channel, didWin ? 'win' : 'lose');
   };
 

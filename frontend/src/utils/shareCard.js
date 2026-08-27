@@ -194,6 +194,18 @@ export const renderShareCard = ({ result, squares, winningLine, stats }) =>
  * downloads the PNG so it can be posted manually.
  * Returns 'shared' | 'downloaded' | 'dismissed' | 'failed'.
  */
+// Share intents (window.open to a twitter.com/x.com/etc URL) can't attach
+// media, but the X web composer accepts an image pasted from the clipboard,
+// so this lets the caller copy the card there for a one-paste attach.
+export const copyCardToClipboard = async (blob) => {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
+
 export const shareCardImage = async (blob, { text, url }) => {
   const file = new File([blob], 'tic-tac-two-victory.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
