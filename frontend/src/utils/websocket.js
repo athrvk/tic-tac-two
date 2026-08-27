@@ -5,11 +5,19 @@ import { trackWebSocketConnected, trackWebSocketError } from './analytics';
 class WebSocketService {
   constructor() {
     this.client = null;
-    this.connected = false;
     this.onMessageCallback = null;
     this.onJoinRoomCallback = null; // Add callback for join room
     this.onConnectCallback = null; // Fired once the STOMP session is established
+    this.onDisconnectCallback = null; // Fired on graceful disconnect or socket close
     this.connectionStartTime = null;
+    this.roomCallback = null; // Kept so a reconnect can re-subscribe to the room
+    this.roomSubscription = null;
+  }
+
+  // onDisconnect only fires for graceful disconnects (stompjs v7), so this
+  // getter is the source of truth for connection state instead of a mirrored field
+  get connected() {
+    return !!this.client && this.client.connected;
   }
 
   connect(username) {
@@ -44,7 +52,6 @@ class WebSocketService {
         return socket;
       }, // Update with backend URL
       onConnect: (frame) => {
-        this.connected = true;
         console.log('STOMP connected as : ' + username);
         
         // Track successful WebSocket connection
@@ -80,10 +87,24 @@ class WebSocketService {
         if (this.onConnectCallback) {
           this.onConnectCallback();
         }
+        // stompjs does not restore subscriptions across a reconnect, so
+        // re-subscribe and re-join the room server-side if we had one
+        if (this.roomId && this.roomCallback) {
+          this.subscribe(this.roomId, this.roomCallback);
+          this.joinRoom(this.roomId);
+        }
       },
       onDisconnect: (frame) => {
-        this.connected = false;
         console.log('WebSocket disconnected: ' + username);
+        if (this.onDisconnectCallback) {
+          this.onDisconnectCallback();
+        }
+      },
+      onWebSocketClose: (event) => {
+        console.log('WebSocket connection closed');
+        if (this.onDisconnectCallback) {
+          this.onDisconnectCallback();
+        }
       },
       onStompError: (frame) => {
         console.error('Broker reported error: ' + frame.headers['message']);
@@ -99,27 +120,42 @@ class WebSocketService {
   }
 
   disconnect() {
-    if (this.client && this.connected) {
+    // Deactivate even while disconnected — a client mid-reconnect would
+    // otherwise keep retrying forever
+    if (this.client) {
       this.client.deactivate();
     }
   }
 
   subscribe(roomId, callback) {
     if (!this.client || !this.connected) return;
-    this.client.subscribe(`/topic/room/${roomId}`, (message) => {
+    if (this.roomSubscription) {
+      try {
+        this.roomSubscription.unsubscribe();
+      } catch (e) {
+        // Previous subscription may belong to a dead connection
+      }
+    }
+    this.roomSubscription = this.client.subscribe(`/topic/room/${roomId}`, (message) => {
       const data = JSON.parse(message.body);
       console.log(`[/topic/room/${roomId}] - Received message:`, data);
       callback(data);
     });
     this.roomId = roomId;
+    this.roomCallback = callback;
   }
 
   sendGameState(roomId, gameState) {
-    if (!this.client || !this.connected) return;
-    this.client.publish({
-      destination: `/app/updateGameState`,
-      body: JSON.stringify({ roomId, gameState }),
-    });
+    if (!this.client || !this.connected) return false;
+    try {
+      this.client.publish({
+        destination: `/app/updateGameState`,
+        body: JSON.stringify({ roomId, gameState }),
+      });
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   createRoom(username, roomId) { // Accept username as parameter
@@ -148,6 +184,10 @@ class WebSocketService {
 
   setOnConnectCallback(callback) {
     this.onConnectCallback = callback;
+  }
+
+  setOnDisconnectCallback(callback) {
+    this.onDisconnectCallback = callback;
   }
 }
 
