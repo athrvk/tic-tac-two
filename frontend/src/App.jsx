@@ -22,7 +22,7 @@ const canShareFiles = (() => {
     return false;
   }
 })();
-import { renderShareCard, shareCardImage } from './utils/shareCard';
+import { renderShareCard, shareCardImage, copyCardToClipboard } from './utils/shareCard';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 
@@ -91,11 +91,28 @@ function GamePage() {
   const isRoomFullRef = useRef(isRoomFull);
   const gameWinnerRef = useRef(gameWinner);
   const roomIdRef = useRef(roomId);
+  const playerSymbolRef = useRef(playerSymbol);
+  const waitingStartTimeRef = useRef(waitingStartTime);
+  const gameStartTimeRef = useRef(gameStartTime);
+  const historyRef = useRef(history);
+  const inputRoomIdRef = useRef(inputRoomId);
+  // The room id we actually asked to join (as opposed to the one the server
+  // assigned) - lets us tell the caller when they were diverted to a
+  // different room, and lets a lost invite-link auto-join be retried
+  const pendingJoinRoomIdRef = useRef(null);
   // onConnect re-fires on every reconnect, so the invite-link auto-join
-  // must only run once, on the very first connection
+  // analytics event must only fire once, on the very first connection
   const hasAutoJoinedRef = useRef(false);
+  // Whether the invite-link auto-join has actually landed a room_joined;
+  // while false, every reconnect retries it (the previous attempt's join
+  // may have been lost with the dropped connection)
+  const autoJoinCompleteRef = useRef(false);
   // The reconnecting banner is only meaningful after a connection existed
   const hasEverConnectedRef = useRef(false);
+  // Tracks whether the [username] effect below has already run once, so a
+  // later run (the server renaming a duplicated tab) switches the existing
+  // socket to the new username instead of opening a second, separate one.
+  const hasConnectedOnceRef = useRef(false);
   // Stats for the shareable victory card: moves this game (history is capped
   // at 6 so it can't be derived), duration frozen at the winning move, and a
   // per-device win streak
@@ -103,6 +120,10 @@ function GamePage() {
   const gameMovesRef = useRef(0);
   const gameDurationRef = useRef(0);
   const streakRef = useRef(0);
+  // Bumped every time a server-authoritative state is applied (optimistic
+  // commit or broadcast). Lets a late ack-timeout tell whether something
+  // newer has already superseded the move it would otherwise roll back.
+  const stateVersionRef = useRef(0);
 
   const updateStreak = (didWin) => {
     try {
@@ -115,14 +136,17 @@ function GamePage() {
   };
 
   // Guards against recording the same game end twice (local commit + its
-  // server echo both detect the winner)
+  // server echo both detect the winner). Returns whether this call was the
+  // one that actually recorded it, so callers can gate one-shot side
+  // effects (analytics) on the same check instead of racing separately.
   const gameEndRecordedRef = useRef(false);
 
   const recordGameEnd = (winner) => {
-    if (gameEndRecordedRef.current) return;
+    if (gameEndRecordedRef.current) return false;
     gameEndRecordedRef.current = true;
     gameDurationRef.current = getGameDuration();
-    updateStreak(winner === playerSymbol);
+    updateStreak(winner === playerSymbolRef.current);
+    return true;
   };
 
   const resetGameStats = () => {
@@ -132,11 +156,16 @@ function GamePage() {
   // Tracks the pending auto-clear so a new message can't be wiped early by
   // a stale timeout from a previous message
   const messageTimer = useRef(null);
+  // True while the current message has no auto-clear (ms === 0) - lets a
+  // disconnect clear a "joining..." style toast that would otherwise sit
+  // on screen forever once the send behind it can no longer complete
+  const pendingMessageRef = useRef(false);
   // In-flight guard for the share card render/share
   const sharingCardRef = useRef(false);
 
   const showMessage = (text, ms = 4000) => {
     setMessage(text);
+    pendingMessageRef.current = !ms;
     clearTimeout(messageTimer.current);
     if (ms) messageTimer.current = setTimeout(() => setMessage(''), ms);
   };
@@ -172,6 +201,36 @@ function GamePage() {
   }, [roomId]);
 
   useEffect(() => {
+    playerSymbolRef.current = playerSymbol;
+  }, [playerSymbol]);
+
+  useEffect(() => {
+    waitingStartTimeRef.current = waitingStartTime;
+  }, [waitingStartTime]);
+
+  useEffect(() => {
+    gameStartTimeRef.current = gameStartTime;
+  }, [gameStartTime]);
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    inputRoomIdRef.current = inputRoomId;
+  }, [inputRoomId]);
+
+  // Tears the socket down once, on unmount only. Connecting and switching
+  // usernames happen in the effect below; this stays separate so that a
+  // rename (which re-runs the effect below) never closes the socket out
+  // from under the still-active room subscription.
+  useEffect(() => {
+    return () => {
+      webSocketService.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
     // Invite links carry the room code as ?room=..., join automatically once connected.
     // Sanitized because some share targets append the share text to the URL.
     const urlRoom = sanitizeRoomCode(new URLSearchParams(window.location.search).get('room'));
@@ -179,35 +238,57 @@ function GamePage() {
       setInputRoomId(urlRoom);
     }
     // Single onConnect callback shared by everyone: it always reflects connection
-    // state, and only does the invite-link auto-join on the first connect
+    // state, and does the invite-link auto-join on the first connect - and
+    // retries it on every subsequent reconnect until a room_joined actually
+    // lands, since the connection can die before the response arrives
     webSocketService.setOnConnectCallback(() => {
       hasEverConnectedRef.current = true;
       setIsConnected(true);
-      if (urlRoom && !hasAutoJoinedRef.current) {
-        hasAutoJoinedRef.current = true;
+      if (urlRoom && !autoJoinCompleteRef.current) {
+        pendingJoinRoomIdRef.current = urlRoom;
         webSocketService.joinRoom(urlRoom);
         showMessage('joining game...', 0);
-        trackGameStartIntent('invite_link');
+        if (!hasAutoJoinedRef.current) {
+          hasAutoJoinedRef.current = true;
+          trackGameStartIntent('invite_link');
+        }
       }
     });
-    webSocketService.setOnDisconnectCallback(() => setIsConnected(false));
-    webSocketService.connect(username);
+    webSocketService.setOnDisconnectCallback(() => {
+      setIsConnected(false);
+      // A "creating room...", "joining game..." etc toast has no auto-clear
+      // because it is waiting on a server response - once the socket drops
+      // that response cannot arrive, so the toast would otherwise sit there
+      // forever alongside the reconnecting banner
+      if (pendingMessageRef.current) {
+        setMessage('');
+        pendingMessageRef.current = false;
+      }
+    });
+    // First run opens the socket; a later run only happens when the server
+    // renamed a duplicated tab and we adopted the new name (see
+    // handleReceiveMessage's "welcome" case). That rename must not drop the
+    // room subscription, so switch the existing socket's username in place
+    // rather than disconnect() + connect() (which would clear roomId and
+    // roomCallback and strand buffered game_state messages).
+    if (!hasConnectedOnceRef.current) {
+      hasConnectedOnceRef.current = true;
+      webSocketService.connect(username);
+    } else {
+      webSocketService.switchUser(username);
+    }
     webSocketService.setOnMessageCallback(handleReceiveMessage);
     webSocketService.setOnJoinRoomCallback(handleJoinRoomResponse); // Set join room callback
-
-    return () => {
-      webSocketService.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   useEffect(() => {
-    if (webSocketService.connected && roomId) {
+    if (isConnected && roomId) {
       webSocketService.subscribe(roomId, handleReceiveGameState);
       console.log('Subscribed to room:', roomId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [webSocketService.connected, roomId]);
+  }, [isConnected, roomId]);
 
   useEffect(() => {
     const isPlayersTurn =
@@ -237,6 +318,7 @@ function GamePage() {
     // }
     if (data.type === 'room_created' && isCreatingRoomRef.current) {
       setRoomId(data.roomId);
+      pendingJoinRoomIdRef.current = data.roomId;
       webSocketService.joinRoom(data.roomId);
       showMessage('connecting...', 0);
       setIsCreatingRoom(false);
@@ -248,16 +330,53 @@ function GamePage() {
 
   const handleJoinRoomResponse = (data) => {
     if (data.type === 'room_joined' || data.type === 'room_assigned') {
+      // The room id we actually asked for, captured by whichever action
+      // initiated this join (create/join/random/invite-link auto-join). A
+      // plain reconnect (websocket.js re-sending `join` with the remembered
+      // roomId on its own, with no App-level action involved) leaves this
+      // null - fall back to the room we were already in, since that is what
+      // an automatic reconnect is always trying to return to. Random match
+      // stores '' (it asks for no room in particular), which must not fall
+      // through to the old room id or a normal match would look like a
+      // diversion.
+      const requestedRoomId = pendingJoinRoomIdRef.current === ''
+        ? null
+        : pendingJoinRoomIdRef.current || roomIdRef.current || null;
+      pendingJoinRoomIdRef.current = null;
+      // Any room_joined means the invite-link auto-join (if any) is done -
+      // it no longer needs retrying on the next reconnect
+      autoJoinCompleteRef.current = true;
+
       setRoomId(data.roomId);
       setPlayerSymbol(data.playerSymbol);
       setSquares(data.squares);
       setHistory(data.history);
       setXIsNext(data.xIsNext);
       xIsNextRef.current = data.xIsNext;
-      resetGameStats();
-      gameMovesRef.current = data.history.length;
+
+      // Reconcile the result with the authoritative board instead of
+      // assuming a fresh game: a rejoin (refresh, reconnect) can land on a
+      // board that is already won, and gameWinner must reflect that rather
+      // than staying whatever it was before this response
+      const winner = calculateWinner(data.squares);
+      setGameWinner(winner || null);
+      setForfeitWin(false);
+
+      if (data.history.length === 0) {
+        // Genuinely fresh board: this is the start of a new match
+        resetGameStats();
+        gameDurationRef.current = 0;
+      } else {
+        gameMovesRef.current = data.history.length;
+        if (winner) {
+          // Don't record streak/duration/analytics for a result we merely
+          // rejoined into - just make sure it can't be mistaken for a new
+          // win later
+          gameEndRecordedRef.current = true;
+        }
+      }
+
       setIsRoomFull(data.isRoomFull);
-      showMessage('room joined');
       setIsCreatingRoom(false);
       if (joinResolveRef.current) {
         joinResolveRef.current();
@@ -266,8 +385,17 @@ function GamePage() {
       // Keep the room code in the URL so the address bar itself is a shareable invite
       window.history.replaceState(null, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomId)}`);
 
+      if (requestedRoomId && data.roomId !== requestedRoomId) {
+        // The server couldn't seat us in the room we asked for (full, gone,
+        // or a typo) and silently diverted us into a new one - say so
+        showMessage('that room was full, you are in a new one', 6000);
+        setInputRoomId(data.roomId);
+      } else {
+        showMessage('room joined');
+      }
+
       // Track room joined event
-      const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
+      const joinMethod = requestedRoomId ? 'room_code' : 'random_match';
       trackRoomJoined(joinMethod, data.roomId);
 
       // Start waiting timer if room is not full
@@ -276,7 +404,7 @@ function GamePage() {
         trackWaitingForOpponent(0, joinMethod);
       } else {
         // Game is starting with both players
-        const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
+        const gameMode = requestedRoomId ? 'private_room' : 'random_match';
         trackGameStarted(gameMode, data.playerSymbol);
         setGameStartTime(Date.now());
         startGameTimer();
@@ -289,18 +417,26 @@ function GamePage() {
       if (data.gameState.history.length === 0) {
         // Fresh board (rematch or reset)
         resetGameStats();
+        gameDurationRef.current = 0;
       } else if (data.gameState.xIsNext !== xIsNextRef.current) {
         // A turn flip we haven't applied yet is the opponent's move; our own
         // moves are counted at commit time and their echo doesn't flip again
         gameMovesRef.current += 1;
       }
       xIsNextRef.current = data.gameState.xIsNext;
+      stateVersionRef.current += 1;
       setSquares(data.gameState.squares);
       setHistory(data.gameState.history);
       setXIsNext(data.gameState.xIsNext);
       const winner = calculateWinner(data.gameState.squares);
-      if (winner && !gameWinnerRef.current) {
-        recordGameEnd(winner.winner);
+      // recordGameEnd is the single dedup gate (it flips synchronously, so
+      // it can't race the way a gameWinnerRef check - updated only via a
+      // later effect - could): whichever of this broadcast or the mover's
+      // own ack success handler gets here first is the one that reports it
+      if (winner && recordGameEnd(winner.winner)) {
+        const gameResult = winner.winner === playerSymbolRef.current ? 'win' : 'lose';
+        trackGameCompleted(gameResult, getGameDuration(), data.gameState.history.length, winner.winner);
+        incrementSessionGameCount();
       }
       setGameWinner(winner);
     }
@@ -308,37 +444,61 @@ function GamePage() {
       setIsRoomFull(data.isRoomFull);
       setForfeitWin(false);
 
+      if (data.isRoomFull) {
+        // A new opponent is seated - this is a fresh match's stats,
+        // whether the previous one ended in a win or the loser just left
+        resetGameStats();
+        gameDurationRef.current = 0;
+      }
+
       // Track when second player joins and game actually starts
-      if (data.isRoomFull && waitingStartTime) {
-        const waitTime = Date.now() - waitingStartTime;
-        const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
+      if (data.isRoomFull && waitingStartTimeRef.current) {
+        const waitTime = Date.now() - waitingStartTimeRef.current;
+        const joinMethod = inputRoomIdRef.current.trim() ? 'room_code' : 'random_match';
         trackWaitingForOpponent(waitTime, joinMethod);
 
-        const gameMode = inputRoomId.trim() ? 'private_room' : 'random_match';
-        trackGameStarted(gameMode, playerSymbol);
+        const gameMode = inputRoomIdRef.current.trim() ? 'private_room' : 'random_match';
+        trackGameStarted(gameMode, playerSymbolRef.current);
         setGameStartTime(Date.now());
         startGameTimer();
         setWaitingStartTime(null);
       }
     }
     if (data.type === 'player_disconnected' && data.roomId === roomIdRef.current) {
-      const gameWasLive = isRoomFullRef.current && !gameWinnerRef.current;
+      const gameIsOver = !!gameWinnerRef.current;
+
+      if (gameIsOver) {
+        // The game already ended - keep the finished board, the winner
+        // highlight and the rematch/share UI exactly as they are; the
+        // opponent leaving now is just a note, not a state change
+        if (data.username !== username) {
+          showMessage('opponent left the room');
+        }
+        return;
+      }
+
+      const gameWasLive = isRoomFullRef.current;
       setIsRoomFull(false);
       setSquares(initialSquares);
       setHistory([]);
       setXIsNext(true);
+      xIsNextRef.current = true;
       setGameWinner(null);
       if (data.username !== username) {
         // Track game abandonment due to disconnection
-        if (gameStartTime) {
-          const progress = getGameProgress(history.length);
+        if (gameStartTimeRef.current) {
+          const progress = getGameProgress(historyRef.current.length);
           trackGameAbandoned('disconnect', progress);
         }
 
         if (gameWasLive) {
           // Opponent abandoned a live game - the remaining player wins by
-          // forfeit and stays in the room to invite the next challenger
+          // forfeit and stays in the room to invite the next challenger.
+          // Reset the per-game stats now so a later win in the same seat
+          // doesn't inherit this game's streak/duration/move count.
           setForfeitWin(true);
+          resetGameStats();
+          gameDurationRef.current = 0;
         } else {
           showMessage('opponent left the room');
         }
@@ -360,6 +520,8 @@ function GamePage() {
     // action transition has committed, and isCreatingRoomRef would still read false.
     isCreatingRoomRef.current = true;
     setIsCreatingRoom(true); // Set the flag before creating room
+    // A manual action supersedes any still-pending invite-link auto-join
+    autoJoinCompleteRef.current = true;
     webSocketService.createRoom(username, inputRoomId.trim());
     showMessage('creating room...', 0);
 
@@ -370,17 +532,22 @@ function GamePage() {
   }, null);
 
   const [, joinAction, joinPending] = useActionState(async () => {
-    webSocketService.joinRoom(inputRoomId.trim());
+    const requestedRoomId = inputRoomId.trim();
+    pendingJoinRoomIdRef.current = requestedRoomId;
+    autoJoinCompleteRef.current = true;
+    webSocketService.joinRoom(requestedRoomId);
     showMessage('joining game...', 0);
 
     // Track game start intent
-    trackGameStartIntent(inputRoomId.trim() ? 'join_room' : 'random_match');
+    trackGameStartIntent(requestedRoomId ? 'join_room' : 'random_match');
     await awaitJoin();
   }, null);
 
   const [, randomAction, randomPending] = useActionState(async () => {
     // Ignore whatever is typed in the room-code box - random match always
     // joins an empty room id
+    pendingJoinRoomIdRef.current = '';
+    autoJoinCompleteRef.current = true;
     webSocketService.joinRoom('');
     showMessage('finding a match...', 0);
     trackGameStartIntent('random_match');
@@ -430,12 +597,36 @@ function GamePage() {
     setXIsNext(!xIsNext);
     gameMovesRef.current += 1;
     xIsNextRef.current = !xIsNext;
+    // Snapshot the local state version right after committing - if a server
+    // broadcast lands before the ack does, it will bump this further, and a
+    // late ack-timeout must then leave the (now authoritative) state alone
+    // instead of reverting to what we captured above
+    stateVersionRef.current += 1;
+    const myVersion = stateVersionRef.current;
+
+    // Track the move
+    trackMoveMade(newHistory.length, index, playerSymbol);
 
     webSocketService.sendMove(roomId, {
       squares: newSquares,
       history: newHistory,
       xIsNext: !xIsNext,
+    }).then(() => {
+      // Only record the game's end once the move is confirmed - an
+      // unconfirmed "win" must never inflate the streak or fire analytics
+      const winner = calculateWinner(newSquares);
+      if (winner && recordGameEnd(winner.winner)) {
+        const gameResult = winner.winner === playerSymbol ? 'win' : 'lose';
+        trackGameCompleted(gameResult, getGameDuration(), newHistory.length, winner.winner);
+        incrementSessionGameCount();
+      }
     }).catch(() => {
+      if (stateVersionRef.current !== myVersion) {
+        // Something newer (the server's own broadcast for this move, or a
+        // later move) already landed - the move was not lost, only its ack
+        // was, so rolling back now would revert confirmed state
+        return;
+      }
       setSquares(prevSquares);
       setHistory(prevHistory);
       setXIsNext(prevXIsNext);
@@ -443,28 +634,30 @@ function GamePage() {
       xIsNextRef.current = prevXIsNext;
       showMessage("move didn't go through, try again");
     });
-
-    // Track the move
-    trackMoveMade(newHistory.length, index, playerSymbol);
-
-    // Check for game completion
-    const winner = calculateWinner(newSquares);
-    if (winner) {
-      recordGameEnd(winner.winner);
-      const gameDuration = getGameDuration();
-      const gameResult = winner.winner === playerSymbol ? 'win' : 'lose';
-      trackGameCompleted(gameResult, gameDuration, newHistory.length, winner.winner);
-      incrementSessionGameCount();
-    }
   };
 
   const handleNewGame = (e) => {
     e.preventDefault();
+
+    if (!webSocketService.connected) {
+      // Never reset the local board without the server hearing about it -
+      // that would strand the player on a blank board the opponent (and
+      // the server) never agreed to
+      showMessage('reconnecting, try again in a moment');
+      return;
+    }
+
+    const prevSquares = squares;
+    const prevHistory = history;
+    const prevXIsNext = xIsNext;
+    const prevGameWinner = gameWinner;
+
     setSquares(initialSquares);
     setHistory([]);
     setXIsNext(true);
     setGameWinner(null);
     resetGameStats();
+    gameDurationRef.current = 0;
     xIsNextRef.current = true;
 
     // Track rematch request
@@ -482,6 +675,14 @@ function GamePage() {
       history: [],
       xIsNext: true,
     }).catch(() => {
+      // The reset never reached the server - restore the result screen
+      // instead of leaving the player on a dead blank board with no way
+      // back to the rematch/share controls
+      setSquares(prevSquares);
+      setHistory(prevHistory);
+      setXIsNext(prevXIsNext);
+      setGameWinner(prevGameWinner);
+      xIsNextRef.current = prevXIsNext;
       showMessage("move didn't go through, try again");
     });
   }
@@ -514,13 +715,65 @@ function GamePage() {
   // One-tap platform shares: pre-filled intents, the OG card rides along on
   // the link unfurl. Instagram has no web share URL, so the card button's
   // native sheet is the only route there.
-  const handleShareIntent = (channel) => {
+  const handleShareIntent = async (channel) => {
     const intents = {
-      x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
+      x: `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(gameUrl)}`,
       whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${gameUrl}`)}`,
+      threads: `https://www.threads.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
     };
-    window.open(intents[channel], '_blank', 'noopener');
+    if (canShareFiles) {
+      // Mobile first: hand the card straight to the native share sheet so
+      // the app the user picks gets the image attached directly, the
+      // standard mobile share flow. No intent URL, no clipboard.
+      try {
+        const blob = await renderShareCard({
+          result: didWin ? 'win' : 'lose',
+          squares,
+          winningLine: gameWinner && gameWinner.line,
+          stats: {
+            durationMs: gameDurationRef.current,
+            moves: gameMovesRef.current,
+            streak: didWin ? streakRef.current : 0,
+          },
+        });
+        const result = await shareCardImage(blob, { text: shareText, url: gameUrl, fallback: 'none' });
+        if (result === 'failed') {
+          // sharing failed outright, fall back to the intent URL so the tap
+          // still does something
+          window.open(intents[channel], '_blank', 'noopener');
+        }
+        // 'dismissed' needs no follow up, the user chose to back out
+      } catch (err) {
+        window.open(intents[channel], '_blank', 'noopener');
+      }
+      trackResultShared(channel, didWin ? 'win' : 'lose');
+      return;
+    }
+
+    if (channel === 'x' || channel === 'threads') {
+      // Open synchronously on the click's user-activation, before any await,
+      // or popup blockers will swallow it.
+      window.open(intents[channel], '_blank', 'noopener');
+      try {
+        const blob = await renderShareCard({
+          result: didWin ? 'win' : 'lose',
+          squares,
+          winningLine: gameWinner && gameWinner.line,
+          stats: {
+            durationMs: gameDurationRef.current,
+            moves: gameMovesRef.current,
+            streak: didWin ? streakRef.current : 0,
+          },
+        });
+        const copied = await copyCardToClipboard(blob);
+        if (copied) showMessage('victory card copied, paste it into your post', 8000);
+      } catch (err) {
+        // card copy is a bonus; the link's OG image still unfurls either way
+      }
+    } else {
+      window.open(intents[channel], '_blank', 'noopener');
+    }
     trackResultShared(channel, didWin ? 'win' : 'lose');
   };
 
@@ -605,10 +858,10 @@ function GamePage() {
                       spellCheck={false}
                     />
                     <RoomControlsButtonGroup>
-                      <Button formAction={createAction} disabled={!inputRoomId || anyPending}>
+                      <Button formAction={createAction} disabled={!inputRoomId || anyPending || !isConnected}>
                         {createPending ? 'creating...' : 'new game'}
                       </Button>
-                      <Button type="submit" $ghost disabled={!inputRoomId || anyPending}>
+                      <Button type="submit" $ghost disabled={!inputRoomId || anyPending || !isConnected}>
                         {joinPending ? 'joining...' : 'join game'}
                       </Button>
                     </RoomControlsButtonGroup>
@@ -616,7 +869,7 @@ function GamePage() {
                 </form>
                 <OrDivider>or</OrDivider>
                 <form action={randomAction} style={{ display: 'contents' }}>
-                  <Button type="submit" disabled={anyPending}>
+                  <Button type="submit" disabled={anyPending || !isConnected}>
                     {randomPending ? 'matching...' : 'random match'}
                   </Button>
                 </form>
@@ -671,6 +924,7 @@ function GamePage() {
                   <MutedNote>{didWin ? 'brag about it on' : 'find a challenger on'}</MutedNote>
                   <ShareRow>
                     <ChipButton onClick={() => handleShareIntent('x')}>share on x</ChipButton>
+                    <ChipButton onClick={() => handleShareIntent('threads')}>threads</ChipButton>
                     <ChipButton onClick={() => handleShareIntent('facebook')}>facebook</ChipButton>
                     <ChipButton onClick={() => handleShareIntent('whatsapp')}>whatsapp</ChipButton>
                   </ShareRow>

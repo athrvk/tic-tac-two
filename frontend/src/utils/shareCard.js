@@ -194,7 +194,24 @@ export const renderShareCard = ({ result, squares, winningLine, stats }) =>
  * downloads the PNG so it can be posted manually.
  * Returns 'shared' | 'downloaded' | 'dismissed' | 'failed'.
  */
-export const shareCardImage = async (blob, { text, url }) => {
+// Share intents (window.open to a twitter.com/x.com/etc URL) can't attach
+// media, but the X web composer accepts an image pasted from the clipboard,
+// so this lets the caller copy the card there for a one-paste attach.
+export const copyCardToClipboard = async (blob) => {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
+
+// fallback: 'download' (default, used by the share-card button) saves the
+// PNG locally when navigator.share is unavailable or throws a non-abort
+// error; 'none' (used by the share chips) skips that and just reports
+// 'failed', so the caller can fall back to opening the channel's intent URL
+// instead of silently starting a download the user didn't ask for.
+export const shareCardImage = async (blob, { text, url, fallback = 'download' }) => {
   const file = new File([blob], 'tic-tac-two-victory.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
@@ -204,8 +221,11 @@ export const shareCardImage = async (blob, { text, url }) => {
       if (err && err.name === 'AbortError') {
         return 'dismissed';
       }
-      // fall through to download
+      // fall through to download (or report failed, per `fallback`)
     }
+  }
+  if (fallback === 'none') {
+    return 'failed';
   }
   try {
     const link = document.createElement('a');

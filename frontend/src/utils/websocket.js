@@ -42,6 +42,32 @@ class WebSocketService {
     this._openSocket();
   }
 
+  // The server can rename a duplicated tab after connect (see the "welcome"
+  // case in _dispatch). Adopting that name must not tear down the room
+  // subscription: a plain disconnect + connect clears roomId and
+  // roomCallback, so the new socket never re-joins the room and every
+  // incoming game_state message piles up in pendingRoomMessages forever.
+  // switchUser reconnects under the new username while keeping roomId,
+  // roomCallback and pendingRoomMessages intact.
+  switchUser(username) {
+    this.explicitDisconnect = false;
+    this.username = encodeURIComponent(username);
+    const oldSocket = this.socket;
+    if (oldSocket) {
+      oldSocket._handledGone = true;
+    }
+    this._stopHeartbeat();
+    this._rejectAllPending('switching user');
+    if (oldSocket) {
+      try {
+        oldSocket.close();
+      } catch (e) {
+        // ignore
+      }
+    }
+    this._openSocket();
+  }
+
   _buildUrl() {
     const isProd = import.meta.env.PROD;
     const base = isProd

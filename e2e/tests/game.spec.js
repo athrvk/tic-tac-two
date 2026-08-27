@@ -67,8 +67,60 @@ test('win shows the filled line and share buttons for both players', async ({ br
   await b.waitForSelector('text=you lose', { timeout: 10000 });
   await a.waitForSelector('text=save card', { timeout: 5000 });
   await a.waitForSelector('text=share on x', { timeout: 5000 });
+  await a.waitForSelector('text=threads', { timeout: 5000 });
   await b.waitForSelector('text=save card', { timeout: 5000 });
   await b.waitForSelector('text=share on x', { timeout: 5000 });
+
+  await ctxA.close();
+  await ctxB.close();
+});
+
+test('win on a file-share-capable device hands the card to the native share sheet, no intent tab', async ({ browser }) => {
+  const room = uniqueRoom('nativeshare');
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+
+  // canShareFiles is captured once at module load, so the stub has to be in
+  // place before the app's first script runs.
+  await ctxA.addInitScript(() => {
+    window.__opened = [];
+    window.open = (url) => {
+      window.__opened.push(url);
+      return null;
+    };
+    navigator.canShare = () => true;
+    navigator.share = (data) => {
+      window.__shared = {
+        files: (data.files || []).map((f) => ({ name: f.name, type: f.type })),
+        text: data.text,
+        url: data.url,
+      };
+      return Promise.resolve();
+    };
+  });
+
+  const a = await ctxA.newPage();
+  const b = await ctxB.newPage();
+
+  await createRoom(a, room);
+  await joinRoom(b, room);
+  await a.waitForSelector('text=you are', { timeout: 15000 });
+
+  // X (creator) wins the top row in 5 moves
+  await playMoves([[a, 0], [b, 3], [a, 1], [b, 4], [a, 2]]);
+
+  await a.waitForSelector('text=you win', { timeout: 10000 });
+  await a.waitForSelector('text=share on x', { timeout: 5000 });
+
+  await a.click('text=share on x');
+  await expect.poll(async () => a.evaluate(() => window.__shared)).toBeTruthy();
+
+  const shared = await a.evaluate(() => window.__shared);
+  expect(shared.files).toHaveLength(1);
+  expect(shared.files[0].type).toBe('image/png');
+
+  const opened = await a.evaluate(() => window.__opened);
+  expect(opened).toEqual([]);
 
   await ctxA.close();
   await ctxB.close();

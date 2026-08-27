@@ -113,3 +113,34 @@ test('waiting-screen refresh keeps the room and its invite link alive', async ({
   await ctx.close();
   await ctx2.close();
 });
+
+test('post-game refresh restores the finished screen with rematch and share controls', async ({ browser }) => {
+  const room = uniqueRoom('postwin');
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+  const a = await ctxA.newPage();
+  const b = await ctxB.newPage();
+
+  await createRoom(a, room);
+  await joinRoom(b, room);
+  await a.waitForSelector('text=you are', { timeout: 15000 });
+  await playMoves([[a, 0], [b, 1], [a, 3], [b, 4], [a, 6]]);
+  await a.waitForSelector('text=you win', { timeout: 10000 });
+
+  // The winner refreshes: the reconnect must land back on the finished
+  // board with the result, rematch and share controls intact
+  await a.reload();
+  await a.waitForSelector('text=you win', { timeout: 20000 });
+  await a.waitForSelector('text=new match', { timeout: 5000 });
+  await a.waitForSelector('text=share on x', { timeout: 5000 });
+
+  // And no forfeit was handed out to the opponent
+  expect(await b.locator('text=you win, opponent left').count()).toBe(0);
+
+  // Rematch still works after the refresh
+  await a.click('text=new match');
+  await expect.poll(async () => (await boardState(b)).join('')).toBe('');
+
+  await ctxA.close();
+  await ctxB.close();
+});

@@ -2,6 +2,7 @@ package com.game.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.game.model.GameState;
@@ -10,6 +11,7 @@ import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
 
 @Service
 public class GameService {
@@ -20,6 +22,9 @@ public class GameService {
     private static final String CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
     private static final int CODE_LENGTH = 6;
     private static final SecureRandom CODE_RANDOM = new SecureRandom();
+    // GC thresholds for the empty-room sweep
+    private static final long EMPTY_ROOM_TTL_MS = 60_000;
+    private static final long NEVER_JOINED_TTL_MS = 10 * 60_000;
 
     // Stores roomId to game state mapping
     private final Map<String, GameState> rooms = new ConcurrentHashMap<>();
@@ -27,6 +32,21 @@ public class GameService {
     private final Map<String, String> playerRoomMap = new ConcurrentHashMap<>();
     // Serializes random-match find-or-create so concurrent joiners pair up
     private final ReentrantLock matchmakingLock = new ReentrantLock();
+    // Set by GameWebSocketHandler so matchmaking can skip a room whose only
+    // occupant is mid disconnect-grace instead of handing a ghost seat to a
+    // random joiner
+    private volatile Predicate<String> pendingEvictionPredicate = username -> false;
+
+    /**
+     * Lets the websocket handler tell the matchmaker which usernames are
+     * currently in their disconnect grace window, without GameService taking
+     * a dependency on the handler itself.
+     *
+     * @param predicate returns true if the given username is pending eviction
+     */
+    public void setPendingEvictionPredicate(Predicate<String> predicate) {
+        this.pendingEvictionPredicate = predicate != null ? predicate : (username -> false);
+    }
 
     /**
      * Creates a new game room with a short generated code (instead of a UUID,
@@ -54,16 +74,26 @@ public class GameService {
      * @return the room ID
      */
     public String createRoom(String roomId) {
-        GameState existing = rooms.get(roomId);
-        if (existing != null && existing.getPlayers() > 0) {
-            // Never reset a room that has players in it - the creator will
-            // simply join it (e.g. two friends both pressing "new game" with
-            // the same code end up in the same room)
+        // computeIfAbsent-style atomicity: the check ("does this room already
+        // have players?") and the replacement must happen as one step, or a
+        // concurrent create for the same code can read stale zero-player
+        // state and stomp the GameState a player was just seated in
+        boolean[] replaced = {false};
+        rooms.compute(roomId, (id, existing) -> {
+            if (existing != null && existing.getPlayers() > 0) {
+                // Never reset a room that has players in it - the creator will
+                // simply join it (e.g. two friends both pressing "new game" with
+                // the same code end up in the same room)
+                return existing;
+            }
+            replaced[0] = true;
+            return new GameState();
+        });
+        if (replaced[0]) {
+            logger.info("Created new room on user request with ID: {}", roomId);
+        } else {
             logger.info("Room {} already exists with players, joining instead of resetting", roomId);
-            return roomId;
         }
-        rooms.put(roomId, new GameState());
-        logger.info("Created new room on user request with ID: {}", roomId);
         return roomId;
     }
 
@@ -89,14 +119,21 @@ public class GameService {
                 for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
                     GameState room = entry.getValue();
                     if (room.getPlayers() == 1) {
+                        // Don't hand a ghost seat to a random matchmaker: the
+                        // lone occupant may already be gone and just sitting
+                        // in its disconnect grace window
+                        if (room.getPlayerSymbols().keySet().stream().anyMatch(pendingEvictionPredicate)) {
+                            continue;
+                        }
                         String symbol = room.assignSymbol(username);
                         if (symbol == null) {
                             // Room filled up concurrently, keep looking
                             continue;
                         }
+                        String previousRoomId = releasePreviousSeat(username, entry.getKey());
                         playerRoomMap.put(username, entry.getKey());
                         logger.info("Players in room {}: {}", entry.getKey(), room.getPlayerSymbols());
-                        return new JoinRoomResponse(entry.getKey(), symbol);
+                        return new JoinRoomResponse(entry.getKey(), symbol, previousRoomId);
                     }
                 }
                 // If no room with one player is found, create a new room
@@ -110,9 +147,10 @@ public class GameService {
             String symbol = desiredRoom.assignSymbol(username);
             if (symbol != null) {
                 logger.info("Joining existing room on user request with ID: {}", desiredRoomId);
+                String previousRoomId = releasePreviousSeat(username, desiredRoomId);
                 playerRoomMap.put(username, desiredRoomId);
                 logger.info("Players in room {}: {}", desiredRoomId, desiredRoom.getPlayerSymbols());
-                return new JoinRoomResponse(desiredRoomId, symbol);
+                return new JoinRoomResponse(desiredRoomId, symbol, previousRoomId);
             }
         }
         // Desired room is full or does not exist - create a new room
@@ -123,9 +161,30 @@ public class GameService {
         String newRoomId = createRoom();
         GameState newRoom = rooms.get(newRoomId);
         String symbol = newRoom.assignSymbol(username);
+        String previousRoomId = releasePreviousSeat(username, newRoomId);
         playerRoomMap.put(username, newRoomId);
         logger.info("Players in room {}: {}", newRoomId, newRoom.getPlayerSymbols());
-        return new JoinRoomResponse(newRoomId, symbol);
+        return new JoinRoomResponse(newRoomId, symbol, previousRoomId);
+    }
+
+    /**
+     * Vacates whatever room the username was previously seated in, if any
+     * and if it differs from the room they are about to be seated in. A
+     * player only ever holds one seat at a time; joining a new room (e.g.
+     * clicking a different invite link mid-game) must release the old one
+     * instead of leaving a phantom player behind.
+     *
+     * @param username  the joining player
+     * @param newRoomId the room they are about to be seated in
+     * @return the vacated room's ID, or null if there was nothing to vacate
+     */
+    private String releasePreviousSeat(String username, String newRoomId) {
+        String oldRoomId = playerRoomMap.get(username);
+        if (oldRoomId != null && !oldRoomId.equals(newRoomId)) {
+            removePlayerFromRoom(oldRoomId, username);
+            return oldRoomId;
+        }
+        return null;
     }
 
     /**
@@ -315,7 +374,51 @@ public class GameService {
     }
 
     /**
-     * Response record for joinRoom method.
+     * Checks whether a room still exists (as opposed to being available,
+     * which also includes rooms with 1 of 2 seats taken - see getRooms()).
+     * Used to gate cleanup of per-room resources (e.g. roomLocks) so a lock
+     * for a still-live room is never dropped.
+     *
+     * @param roomId the ID of the room
+     * @return true if the room still exists
      */
-    public record JoinRoomResponse(String roomId, String playerSymbol) {}
+    public boolean roomExists(String roomId) {
+        return rooms.containsKey(roomId);
+    }
+
+    /**
+     * Sweeps rooms nobody occupies any more: a room that has sat at 0
+     * players for over a minute, or one that was created but never joined
+     * within 10 minutes. Empty rooms with players are already deleted
+     * immediately by removePlayerFromRoom; this is a backstop for rooms
+     * that reach 0 players some other way, and for create-without-join.
+     */
+    @Scheduled(fixedRate = 30_000)
+    public void sweepEmptyRooms() {
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
+            String roomId = entry.getKey();
+            GameState room = entry.getValue();
+            if (room.getPlayers() != 0) {
+                continue;
+            }
+            boolean staleEmpty = now - room.getEmptySince() > EMPTY_ROOM_TTL_MS;
+            boolean staleNeverJoined = now - room.getCreatedAt() > NEVER_JOINED_TTL_MS;
+            if (staleEmpty || staleNeverJoined) {
+                // Only remove if it's still the same GameState we inspected -
+                // avoids racing a join that just seated someone in it
+                if (rooms.remove(roomId, room)) {
+                    logger.info("Removed empty room {} during GC sweep", roomId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Response record for joinRoom method.
+     *
+     * @param previousRoomId the room the player was vacated from as part of
+     *                       this join, or null if they held no other seat
+     */
+    public record JoinRoomResponse(String roomId, String playerSymbol, String previousRoomId) {}
 }
