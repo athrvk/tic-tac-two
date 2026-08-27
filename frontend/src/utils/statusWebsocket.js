@@ -42,7 +42,7 @@ class StatusWebSocketService {
             heartbeatIncoming: 2000,
             heartbeatOutgoing: 2000,
             webSocketFactory: () => {
-                const isProd = process.env.NODE_ENV === 'production';
+                const isProd = import.meta.env.PROD;
                 // Same-origin in production: keep scheme and host:port from the page
                 const base = isProd
                     ? `${window.location.protocol}//${window.location.host}`

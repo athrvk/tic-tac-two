@@ -40,7 +40,7 @@ class WebSocketService {
       heartbeatIncoming: 2000,
       heartbeatOutgoing: 2000,
       webSocketFactory: () => {
-        const isProd = process.env.NODE_ENV === 'production';
+        const isProd = import.meta.env.PROD;
         // In production the app is served same-origin by the backend, so keep
         // scheme and host:port from the page (works on any domain and port)
         const base = isProd
