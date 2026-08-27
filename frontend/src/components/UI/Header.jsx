@@ -42,8 +42,13 @@ const Username = styled.span`
     font-weight: ${theme.typography.body.fontWeight};
     color: ${theme.colors.muted};
     font-style: italic;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     @media (max-width: 768px) {
         margin-top: ${theme.spacing.xs};
+        max-width: 80vw;
     }
 `;
 

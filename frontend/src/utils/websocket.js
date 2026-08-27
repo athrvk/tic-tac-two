@@ -25,6 +25,10 @@ class WebSocketService {
     this.livenessTimer = null;
     this.lastMessageAt = null;
     this.pendingAcks = new Map(); // moveId -> { resolve, reject, timeoutId }
+    // Deliberately in-memory only (per page load): a reconnect of the same
+    // page keeps this id, while a duplicated tab (which clones sessionStorage)
+    // gets a fresh one - lets the server tell the two cases apart.
+    this.tabId = crypto.randomUUID();
   }
 
   get connected() {
@@ -43,7 +47,7 @@ class WebSocketService {
     const base = isProd
       ? `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}`
       : 'ws://localhost:8080';
-    return `${base}/ws?username=${this.username}`;
+    return `${base}/ws?username=${this.username}&tab=${this.tabId}`;
   }
 
   _openSocket() {

@@ -58,6 +58,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     // Session id -> username, so afterConnectionClosed can clean up without
     // relying on session attributes surviving an abrupt close
     private final Map<String, String> usernameBySessionId = new ConcurrentHashMap<>();
+    // Session id -> per-page-load tab id, so a rename-adopting reconnect from
+    // the same tab can be told apart from a genuine duplicate tab
+    private final Map<String, String> tabBySessionId = new ConcurrentHashMap<>();
     // Username -> earliest eviction time; entries are cancelled by a reconnect
     private final Map<String, Long> pendingEvictions = new ConcurrentHashMap<>();
     // Per-room ordering for join notifications: without it, two simultaneous
@@ -76,6 +79,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         }
         String username = URLDecoder.decode(rawUsername, StandardCharsets.UTF_8);
         boolean isStatus = "status".equals(query.get("type"));
+        String rawTab = query.get("tab");
+        String tabId = (rawTab == null || rawTab.isEmpty()) ? "" : URLDecoder.decode(rawTab, StandardCharsets.UTF_8);
 
         WebSocketSession session = new ConcurrentWebSocketSessionDecorator(
                 rawSession, SEND_TIME_LIMIT_MS, BUFFER_SIZE_LIMIT_BYTES);
@@ -87,17 +92,34 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             // refresh's old session is already closed, so it keeps its name).
             WebSocketSession existing = playersByUsername.get(username);
             if (existing != null && existing.isOpen() && !existing.getId().equals(session.getId())) {
-                String candidate;
-                do {
-                    candidate = username + "-" + randomSuffix();
-                } while (playersByUsername.containsKey(candidate));
-                logger.info("Username {} already live in another tab, assigning {}", username, candidate);
-                username = candidate;
+                String existingTabId = tabBySessionId.get(existing.getId());
+                if (!tabId.isEmpty() && tabId.equals(existingTabId)) {
+                    // Same tab reconnecting (e.g. right after adopting a
+                    // rename): the old socket just hasn't been torn down yet.
+                    // Keep the name and drop the stale session instead of
+                    // renaming again - closeQuietly below runs before the new
+                    // session is registered, so afterConnectionClosed's
+                    // "still tracked under this id" check still sees the
+                    // stale session as owner and doesn't touch our new one.
+                    logger.info("Username {} reconnecting from same tab {}, dropping stale session", username, tabId);
+                    closeQuietly(existing);
+                } else {
+                    // Cap growth so repeated duplication can't produce an
+                    // unbounded name
+                    String base = username.length() > 20 ? username.substring(0, 20) : username;
+                    String candidate;
+                    do {
+                        candidate = base + "-" + randomSuffix();
+                    } while (playersByUsername.containsKey(candidate));
+                    logger.info("Username {} already live in another tab, assigning {}", username, candidate);
+                    username = candidate;
+                }
             }
         }
 
         lastSeen.put(session.getId(), System.currentTimeMillis());
         usernameBySessionId.put(session.getId(), username);
+        tabBySessionId.put(session.getId(), tabId);
         if (isStatus) {
             statusSessions.add(session);
         } else {
@@ -219,6 +241,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession rawSession, CloseStatus status) {
         String sessionId = rawSession.getId();
         String username = usernameBySessionId.remove(sessionId);
+        tabBySessionId.remove(sessionId);
         lastSeen.remove(sessionId);
         statusSessions.removeIf(s -> s.getId().equals(sessionId));
 
