@@ -109,6 +109,10 @@ function GamePage() {
   const autoJoinCompleteRef = useRef(false);
   // The reconnecting banner is only meaningful after a connection existed
   const hasEverConnectedRef = useRef(false);
+  // Tracks whether the [username] effect below has already run once, so a
+  // later run (the server renaming a duplicated tab) switches the existing
+  // socket to the new username instead of opening a second, separate one.
+  const hasConnectedOnceRef = useRef(false);
   // Stats for the shareable victory card: moves this game (history is capped
   // at 6 so it can't be derived), duration frozen at the winning move, and a
   // per-device win streak
@@ -216,6 +220,16 @@ function GamePage() {
     inputRoomIdRef.current = inputRoomId;
   }, [inputRoomId]);
 
+  // Tears the socket down once, on unmount only. Connecting and switching
+  // usernames happen in the effect below; this stays separate so that a
+  // rename (which re-runs the effect below) never closes the socket out
+  // from under the still-active room subscription.
+  useEffect(() => {
+    return () => {
+      webSocketService.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     // Invite links carry the room code as ?room=..., join automatically once connected.
     // Sanitized because some share targets append the share text to the URL.
@@ -251,23 +265,30 @@ function GamePage() {
         pendingMessageRef.current = false;
       }
     });
-    webSocketService.connect(username);
+    // First run opens the socket; a later run only happens when the server
+    // renamed a duplicated tab and we adopted the new name (see
+    // handleReceiveMessage's "welcome" case). That rename must not drop the
+    // room subscription, so switch the existing socket's username in place
+    // rather than disconnect() + connect() (which would clear roomId and
+    // roomCallback and strand buffered game_state messages).
+    if (!hasConnectedOnceRef.current) {
+      hasConnectedOnceRef.current = true;
+      webSocketService.connect(username);
+    } else {
+      webSocketService.switchUser(username);
+    }
     webSocketService.setOnMessageCallback(handleReceiveMessage);
     webSocketService.setOnJoinRoomCallback(handleJoinRoomResponse); // Set join room callback
-
-    return () => {
-      webSocketService.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   useEffect(() => {
-    if (webSocketService.connected && roomId) {
+    if (isConnected && roomId) {
       webSocketService.subscribe(roomId, handleReceiveGameState);
       console.log('Subscribed to room:', roomId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [webSocketService.connected, roomId]);
+  }, [isConnected, roomId]);
 
   useEffect(() => {
     const isPlayersTurn =
