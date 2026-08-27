@@ -37,6 +37,10 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private static final int BUFFER_SIZE_LIMIT_BYTES = 512 * 1024;
     // Client pings every 3s; anything silent for more than ~3 misses is dead
     private static final long LIVENESS_TIMEOUT_MS = 10_000;
+    // A closed connection keeps its room seat briefly: a page refresh or a
+    // quick network blip reconnects as the same username and resumes the game
+    // instead of handing the opponent a forfeit
+    private static final long DISCONNECT_GRACE_MS = 4_000;
 
     @Autowired
     private GameService gameService;
@@ -52,6 +56,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     // Session id -> username, so afterConnectionClosed can clean up without
     // relying on session attributes surviving an abrupt close
     private final Map<String, String> usernameBySessionId = new ConcurrentHashMap<>();
+    // Username -> earliest eviction time; entries are cancelled by a reconnect
+    private final Map<String, Long> pendingEvictions = new ConcurrentHashMap<>();
+    // Per-room ordering for join notifications: without it, two simultaneous
+    // joins can interleave so a player receives isRoomFull=true before a
+    // stale isRoomFull=false and stays on the waiting screen
+    private final Map<String, Object> roomLocks = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession rawSession) throws Exception {
@@ -74,6 +84,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             statusSessions.add(session);
         } else {
             playersByUsername.put(username, session);
+            // A reconnect within the grace window keeps the player's seat
+            pendingEvictions.remove(username);
         }
     }
 
@@ -128,7 +140,6 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         JoinRoomResponse response = gameService.joinRoom(desiredRoomId, username);
         String assignedRoomId = response.roomId();
         String playerSymbol = response.playerSymbol();
-        boolean isRoomFull = gameService.isRoomFull(assignedRoomId);
 
         if (assignedRoomId.equals(desiredRoomId)) {
             logger.info("Player {} joined room with ID: {} as requested", username, assignedRoomId);
@@ -136,16 +147,22 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             logger.info("Player {} joined new room with ID: {}", username, assignedRoomId);
         }
 
-        sendTo(session, Map.of(
-                "type", "room_joined",
-                "roomId", assignedRoomId,
-                "playerSymbol", playerSymbol,
-                "squares", gameService.getSquares(assignedRoomId),
-                "history", gameService.getHistory(assignedRoomId),
-                "xIsNext", gameService.isXIsNext(assignedRoomId),
-                "isRoomFull", isRoomFull));
-        broadcastToRoom(assignedRoomId, Map.of(
-                "type", "player_joined", "roomId", assignedRoomId, "isRoomFull", isRoomFull));
+        // Read the seat state and send inside the room lock so concurrent
+        // joins can't deliver a stale isRoomFull after a fresh one
+        Object roomLock = roomLocks.computeIfAbsent(assignedRoomId, k -> new Object());
+        synchronized (roomLock) {
+            boolean isRoomFull = gameService.isRoomFull(assignedRoomId);
+            sendTo(session, Map.of(
+                    "type", "room_joined",
+                    "roomId", assignedRoomId,
+                    "playerSymbol", playerSymbol,
+                    "squares", gameService.getSquares(assignedRoomId),
+                    "history", gameService.getHistory(assignedRoomId),
+                    "xIsNext", gameService.isXIsNext(assignedRoomId),
+                    "isRoomFull", isRoomFull));
+            broadcastToRoom(assignedRoomId, Map.of(
+                    "type", "player_joined", "roomId", assignedRoomId, "isRoomFull", isRoomFull));
+        }
     }
 
     private static String normalizeRoomId(String roomId) {
@@ -190,11 +207,35 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        String roomId = gameService.getRoomOfPlayer(username);
-        if (roomId != null && gameService.removePlayerFromRoom(roomId, username)) {
-            logger.info("Player {} disconnected from room {}", username, roomId);
-            broadcastToRoom(roomId, Map.of("type", "player_disconnected", "roomId", roomId, "username", username));
+        if (gameService.getRoomOfPlayer(username) != null) {
+            // Don't evict immediately: give a refresh/blip time to reconnect
+            pendingEvictions.put(username, System.currentTimeMillis() + DISCONNECT_GRACE_MS);
         }
+    }
+
+    /*
+     * Evict players whose disconnect grace expired without a reconnect
+     */
+    @Scheduled(fixedRate = 2000)
+    public void processPendingEvictions() {
+        long now = System.currentTimeMillis();
+        pendingEvictions.forEach((username, evictAt) -> {
+            if (now < evictAt) {
+                return;
+            }
+            pendingEvictions.remove(username);
+            if (playersByUsername.containsKey(username)) {
+                return; // reconnected in time
+            }
+            String roomId = gameService.getRoomOfPlayer(username);
+            if (roomId != null && gameService.removePlayerFromRoom(roomId, username)) {
+                logger.info("Player {} evicted after disconnect grace from room {}", username, roomId);
+                broadcastToRoom(roomId, Map.of("type", "player_disconnected", "roomId", roomId, "username", username));
+                if (!gameService.getRooms().contains(roomId)) {
+                    roomLocks.remove(roomId);
+                }
+            }
+        });
     }
 
     /*

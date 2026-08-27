@@ -9,6 +9,7 @@ import com.game.model.GameState;
 import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 public class GameService {
@@ -24,6 +25,8 @@ public class GameService {
     private final Map<String, GameState> rooms = new ConcurrentHashMap<>();
     // Stores username to roomId mapping
     private final Map<String, String> playerRoomMap = new ConcurrentHashMap<>();
+    // Serializes random-match find-or-create so concurrent joiners pair up
+    private final ReentrantLock matchmakingLock = new ReentrantLock();
 
     /**
      * Creates a new game room with a short generated code (instead of a UUID,
@@ -78,22 +81,29 @@ public class GameService {
     public JoinRoomResponse joinRoom(String desiredRoomId, String username) {
         if (desiredRoomId == null || desiredRoomId.isEmpty()) {
             logger.info("Joining any available room for user: {}", username);
-            // Try to find a room with only one player
-            for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
-                GameState room = entry.getValue();
-                if (room.getPlayers() == 1) {
-                    String symbol = room.assignSymbol(username);
-                    if (symbol == null) {
-                        // Room filled up concurrently, keep looking
-                        continue;
+            // Serialized: simultaneous random matches would otherwise all scan
+            // before anyone's seat registers and each end up in their own room
+            matchmakingLock.lock();
+            try {
+                // Try to find a room with only one player
+                for (Map.Entry<String, GameState> entry : rooms.entrySet()) {
+                    GameState room = entry.getValue();
+                    if (room.getPlayers() == 1) {
+                        String symbol = room.assignSymbol(username);
+                        if (symbol == null) {
+                            // Room filled up concurrently, keep looking
+                            continue;
+                        }
+                        playerRoomMap.put(username, entry.getKey());
+                        logger.info("Players in room {}: {}", entry.getKey(), room.getPlayerSymbols());
+                        return new JoinRoomResponse(entry.getKey(), symbol);
                     }
-                    playerRoomMap.put(username, entry.getKey());
-                    logger.info("Players in room {}: {}", entry.getKey(), room.getPlayerSymbols());
-                    return new JoinRoomResponse(entry.getKey(), symbol);
                 }
+                // If no room with one player is found, create a new room
+                return joinNewRoom(username);
+            } finally {
+                matchmakingLock.unlock();
             }
-            // If no room with one player is found, create a new room
-            return joinNewRoom(username);
         }
         GameState desiredRoom = rooms.get(desiredRoomId);
         if (desiredRoom != null) {

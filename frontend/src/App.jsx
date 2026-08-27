@@ -11,6 +11,7 @@ import { Input, Button, Label } from './components/UI/Input';
 import GlobalStyle from './styles/GlobalStyle';
 import { calculateWinner } from './utils/helper';
 import { buildInviteLink, shareLink, shareOrCopy, sanitizeRoomCode } from './utils/share';
+import { renderShareCard, shareCardImage } from './utils/shareCard';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 
@@ -50,8 +51,20 @@ function GamePage() {
   const [inputRoomId, setInputRoomId] = useState('');
   const [message, setMessage] = useState('');
   const [playerSymbol, setPlayerSymbol] = useState('');
-  // Truncation can leave a trailing separator, which reads as a typo
-  const [username] = useState(() => generateUsername("-", 0, 16).replace(/-+$/, ''));
+  // Truncation can leave a trailing separator, which reads as a typo.
+  // Persisted per-tab so a page refresh keeps the same identity (the server
+  // can then treat the reconnect as the same player instead of a new one).
+  const [username] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('ttt_username');
+      if (saved) return saved;
+      const fresh = generateUsername("-", 0, 16).replace(/-+$/, '');
+      sessionStorage.setItem('ttt_username', fresh);
+      return fresh;
+    } catch (err) {
+      return generateUsername("-", 0, 16).replace(/-+$/, '');
+    }
+  });
   const [gameWinner, setGameWinner] = useState(null);
   const [isRoomFull, setIsRoomFull] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
@@ -66,11 +79,45 @@ function GamePage() {
   // must come through refs
   const isRoomFullRef = useRef(isRoomFull);
   const gameWinnerRef = useRef(gameWinner);
+  const roomIdRef = useRef(roomId);
   // onConnect re-fires on every reconnect, so the invite-link auto-join
   // must only run once, on the very first connection
   const hasAutoJoinedRef = useRef(false);
   // The reconnecting banner is only meaningful after a connection existed
   const hasEverConnectedRef = useRef(false);
+  // Stats for the shareable victory card: moves this game (history is capped
+  // at 6 so it can't be derived), duration frozen at the winning move, and a
+  // per-device win streak
+  const xIsNextRef = useRef(true);
+  const gameMovesRef = useRef(0);
+  const gameDurationRef = useRef(0);
+  const streakRef = useRef(0);
+
+  const updateStreak = (didWin) => {
+    try {
+      const next = didWin ? (parseInt(localStorage.getItem('ttt_win_streak'), 10) || 0) + 1 : 0;
+      localStorage.setItem('ttt_win_streak', String(next));
+      streakRef.current = next;
+    } catch (err) {
+      streakRef.current = didWin ? streakRef.current + 1 : 0;
+    }
+  };
+
+  // Guards against recording the same game end twice (local commit + its
+  // server echo both detect the winner)
+  const gameEndRecordedRef = useRef(false);
+
+  const recordGameEnd = (winner) => {
+    if (gameEndRecordedRef.current) return;
+    gameEndRecordedRef.current = true;
+    gameDurationRef.current = getGameDuration();
+    updateStreak(winner === playerSymbol);
+  };
+
+  const resetGameStats = () => {
+    gameMovesRef.current = 0;
+    gameEndRecordedRef.current = false;
+  };
   // Tracks the pending auto-clear so a new message can't be wiped early by
   // a stale timeout from a previous message
   const messageTimer = useRef(null);
@@ -82,16 +129,34 @@ function GamePage() {
   };
 
   useEffect(() => {
+    try {
+      streakRef.current = parseInt(localStorage.getItem('ttt_win_streak'), 10) || 0;
+    } catch (err) {
+      // localStorage unavailable (private mode): streak just starts at 0
+    }
+  }, []);
+
+  useEffect(() => {
     isCreatingRoomRef.current = isCreatingRoom;
   }, [isCreatingRoom]);
 
   useEffect(() => {
     isRoomFullRef.current = isRoomFull;
+    // Start the game clock the moment the room fills. The websocket callbacks
+    // also do this, but they close over stale state; this effect is the
+    // reliable path for both players.
+    if (isRoomFull) {
+      startGameTimer();
+    }
   }, [isRoomFull]);
 
   useEffect(() => {
     gameWinnerRef.current = gameWinner;
   }, [gameWinner]);
+
+  useEffect(() => {
+    roomIdRef.current = roomId;
+  }, [roomId]);
 
   useEffect(() => {
     // Invite links carry the room code as ?room=..., join automatically once connected.
@@ -163,6 +228,9 @@ function GamePage() {
       setSquares(data.squares);
       setHistory(data.history);
       setXIsNext(data.xIsNext);
+      xIsNextRef.current = data.xIsNext;
+      resetGameStats();
+      gameMovesRef.current = data.history.length;
       setIsRoomFull(data.isRoomFull);
       showMessage('room joined');
       setIsCreatingRoom(false);
@@ -193,12 +261,25 @@ function GamePage() {
 
   const handleReceiveGameState = (data) => {
     if (data.type === 'game_state_updated') {
+      if (data.gameState.history.length === 0) {
+        // Fresh board (rematch or reset)
+        resetGameStats();
+      } else if (data.gameState.xIsNext !== xIsNextRef.current) {
+        // A turn flip we haven't applied yet is the opponent's move; our own
+        // moves are counted at commit time and their echo doesn't flip again
+        gameMovesRef.current += 1;
+      }
+      xIsNextRef.current = data.gameState.xIsNext;
       setSquares(data.gameState.squares);
       setHistory(data.gameState.history);
       setXIsNext(data.gameState.xIsNext);
-      setGameWinner(calculateWinner(data.gameState.squares));
+      const winner = calculateWinner(data.gameState.squares);
+      if (winner && !gameWinnerRef.current) {
+        recordGameEnd(winner.winner);
+      }
+      setGameWinner(winner);
     }
-    if (data.type === 'player_joined' && data.roomId === roomId) {
+    if (data.type === 'player_joined' && data.roomId === roomIdRef.current) {
       setIsRoomFull(data.isRoomFull);
       setForfeitWin(false);
 
@@ -215,7 +296,7 @@ function GamePage() {
         setWaitingStartTime(null);
       }
     }
-    if (data.type === 'player_disconnected' && data.roomId === roomId) {
+    if (data.type === 'player_disconnected' && data.roomId === roomIdRef.current) {
       const gameWasLive = isRoomFullRef.current && !gameWinnerRef.current;
       setIsRoomFull(false);
       setSquares(initialSquares);
@@ -322,6 +403,8 @@ function GamePage() {
     setSquares(newSquares);
     setHistory(newHistory);
     setXIsNext(!xIsNext);
+    gameMovesRef.current += 1;
+    xIsNextRef.current = !xIsNext;
 
     webSocketService.sendMove(roomId, {
       squares: newSquares,
@@ -331,6 +414,8 @@ function GamePage() {
       setSquares(prevSquares);
       setHistory(prevHistory);
       setXIsNext(prevXIsNext);
+      gameMovesRef.current -= 1;
+      xIsNextRef.current = prevXIsNext;
       showMessage("move didn't go through, try again");
     });
 
@@ -340,6 +425,7 @@ function GamePage() {
     // Check for game completion
     const winner = calculateWinner(newSquares);
     if (winner) {
+      recordGameEnd(winner.winner);
       const gameDuration = getGameDuration();
       const gameResult = winner.winner === playerSymbol ? 'win' : 'lose';
       trackGameCompleted(gameResult, gameDuration, newHistory.length, winner.winner);
@@ -353,6 +439,8 @@ function GamePage() {
     setHistory([]);
     setXIsNext(true);
     setGameWinner(null);
+    resetGameStats();
+    xIsNextRef.current = true;
 
     // Track rematch request
     if (gameWinner) {
@@ -394,17 +482,35 @@ function GamePage() {
 
   const handleShareResult = async () => {
     const didWin = gameWinner && gameWinner.winner === playerSymbol;
+    const url = `${window.location.origin}${window.location.pathname}`;
     const text = didWin
       ? 'i just won at tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
       : 'i just played tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
-    const result = await shareOrCopy({
-      title: 'tic-tac-two',
-      text,
-      url: `${window.location.origin}${window.location.pathname}`,
-    });
-    if (result === 'shared') showMessage('shared!');
-    if (result === 'copied') showMessage('copied, paste it anywhere!');
-    trackResultShared(result, didWin ? 'win' : 'lose');
+    try {
+      // A branded card with the final board and stats: shareable straight
+      // into X/Instagram/FB on phones, downloaded as a PNG on desktop
+      const blob = await renderShareCard({
+        result: didWin ? 'win' : 'lose',
+        squares,
+        winningLine: gameWinner && gameWinner.line,
+        stats: {
+          durationMs: gameDurationRef.current,
+          moves: gameMovesRef.current,
+          streak: didWin ? streakRef.current : 0,
+        },
+      });
+      const result = await shareCardImage(blob, { text, url });
+      if (result === 'shared') showMessage('shared!');
+      if (result === 'downloaded') showMessage('victory card saved, post it anywhere', 6000);
+      if (result === 'failed') throw new Error('card share failed');
+      trackResultShared(`card_${result}`, didWin ? 'win' : 'lose');
+    } catch (err) {
+      // Text-only fallback if the canvas or share/download path breaks
+      const result = await shareOrCopy({ title: 'tic-tac-two', text, url });
+      if (result === 'shared') showMessage('shared!');
+      if (result === 'copied') showMessage('copied, paste it anywhere!');
+      trackResultShared(result, didWin ? 'win' : 'lose');
+    }
   };
 
   const turnMessage = useMemo(() => {

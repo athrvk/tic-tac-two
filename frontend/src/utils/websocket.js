@@ -15,6 +15,10 @@ class WebSocketService {
     this.connectionStartTime = null;
     this.roomCallback = null; // Kept so a reconnect can re-subscribe to the room
     this.roomId = null;
+    // Room events can arrive between the server seating us and React
+    // attaching the room callback (simultaneous joins make this window real);
+    // buffer them instead of dropping them
+    this.pendingRoomMessages = [];
     this.username = null;
     this.explicitDisconnect = false;
     this.pingTimer = null;
@@ -127,12 +131,10 @@ class WebSocketService {
         break;
       case 'player_joined':
       case 'player_disconnected':
-        if (this.roomCallback) this.roomCallback(data);
+        this._deliverRoomMessage(data);
         break;
       case 'game_state':
-        if (this.roomCallback) {
-          this.roomCallback({ type: 'game_state_updated', gameState: data.gameState });
-        }
+        this._deliverRoomMessage({ type: 'game_state_updated', gameState: data.gameState });
         break;
       case 'ack':
         this._resolveAck(data.moveId);
@@ -217,9 +219,20 @@ class WebSocketService {
     }
   }
 
+  _deliverRoomMessage(message) {
+    if (this.roomCallback) {
+      this.roomCallback(message);
+    } else if (this.pendingRoomMessages.length < 20) {
+      this.pendingRoomMessages.push(message);
+    }
+  }
+
   subscribe(roomId, callback) {
     this.roomId = roomId;
     this.roomCallback = callback;
+    const buffered = this.pendingRoomMessages;
+    this.pendingRoomMessages = [];
+    buffered.forEach((message) => callback(message));
   }
 
   sendMove(roomId, gameState) {
