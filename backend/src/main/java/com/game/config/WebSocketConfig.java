@@ -38,7 +38,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         heartbeatScheduler.initialize();
         // Enable a simple memory-based message broker to carry the messages back to the client
         config.enableSimpleBroker("/topic", "/queue") // Enable "/topic" and "/queue" for message brokers
-                .setHeartbeatValue(new long[]{10000, 10000})
+                .setHeartbeatValue(new long[]{3000, 3000})
                 .setTaskScheduler(heartbeatScheduler);
         // Set the prefix for messages that are bound for methods annotated with @MessageMapping
         config.setApplicationDestinationPrefixes("/app"); // Prefix for endpoints
