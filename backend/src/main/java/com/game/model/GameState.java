@@ -15,6 +15,11 @@ public class GameState {
     private int players;
     private final Map<String, String> playerSymbols; // Maps username to symbol
     private final ReentrantLock lock;
+    private final long createdAt;
+    // Timestamp the room last had 0 players (starts equal to createdAt, since
+    // that's the room's first empty moment); used by the GC sweep to tell a
+    // freshly-emptied room apart from one that has simply never been joined
+    private long emptySince;
 
     public GameState() {
         this.squares = new ArrayList<>(Collections.nCopies(9, null));
@@ -23,6 +28,27 @@ public class GameState {
         this.players = 0;
         this.playerSymbols = new HashMap<>();
         this.lock = new ReentrantLock();
+        this.createdAt = System.currentTimeMillis();
+        this.emptySince = this.createdAt;
+    }
+
+    /**
+     * @return the time (epoch millis) this room was created
+     */
+    public long getCreatedAt() {
+        return createdAt;
+    }
+
+    /**
+     * @return the time (epoch millis) this room last had 0 players
+     */
+    public long getEmptySince() {
+        lock.lock();
+        try {
+            return emptySince;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public List<String> getSquares() {
@@ -152,6 +178,9 @@ public class GameState {
                 // Reset the game state when a player is removed
                 boolean resetResult = reset();
                 players--;
+                if (players == 0) {
+                    emptySince = System.currentTimeMillis();
+                }
                 return resetResult;
             }
             return false;
