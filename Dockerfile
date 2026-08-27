@@ -8,7 +8,7 @@ COPY frontend/package*.json ./
 RUN npm ci --no-audit --no-fund
 
 # Copy source files and build
-COPY frontend/index.html frontend/vite.config.js ./
+COPY frontend/index.html frontend/vite.config.mjs ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 RUN npm run build
