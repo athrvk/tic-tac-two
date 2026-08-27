@@ -519,11 +519,12 @@ function GamePage() {
       x: `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(gameUrl)}`,
       whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${gameUrl}`)}`,
+      threads: `https://www.threads.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
     };
-    if (channel === 'x') {
+    if (channel === 'x' || channel === 'threads') {
       // Open synchronously on the click's user-activation, before any await,
       // or popup blockers will swallow it.
-      window.open(intents.x, '_blank', 'noopener');
+      window.open(intents[channel], '_blank', 'noopener');
       try {
         const blob = await renderShareCard({
           result: didWin ? 'win' : 'lose',
@@ -693,6 +694,7 @@ function GamePage() {
                   <MutedNote>{didWin ? 'brag about it on' : 'find a challenger on'}</MutedNote>
                   <ShareRow>
                     <ChipButton onClick={() => handleShareIntent('x')}>share on x</ChipButton>
+                    <ChipButton onClick={() => handleShareIntent('threads')}>threads</ChipButton>
                     <ChipButton onClick={() => handleShareIntent('facebook')}>facebook</ChipButton>
                     <ChipButton onClick={() => handleShareIntent('whatsapp')}>whatsapp</ChipButton>
                   </ShareRow>
