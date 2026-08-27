@@ -28,30 +28,63 @@ const roundRect = (ctx, x, y, w, h, r) => {
   ctx.closePath();
 };
 
-const drawBoard = (ctx, squares, winningLine, cx, top, boardSize) => {
-  const gap = boardSize * 0.035;
+const drawBoard = (ctx, squares, winningLine, cx, cy, boardSize, tiltRad) => {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(tiltRad);
+  const gap = boardSize * 0.04;
   const cell = (boardSize - 2 * gap) / 3;
-  const left = cx - boardSize / 2;
+  const origin = -boardSize / 2;
   for (let i = 0; i < 9; i++) {
     const col = i % 3;
     const row = Math.floor(i / 3);
-    const x = left + col * (cell + gap);
-    const y = top + row * (cell + gap);
+    const x = origin + col * (cell + gap);
+    const y = origin + row * (cell + gap);
     const isWin = winningLine && winningLine.includes(i);
+    ctx.save();
+    ctx.shadowColor = 'rgba(20, 20, 20, 0.14)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
     ctx.fillStyle = isWin ? INK : SURFACE;
-    ctx.strokeStyle = isWin ? INK : BORDER;
-    ctx.lineWidth = 3;
-    roundRect(ctx, x, y, cell, cell, cell * 0.12);
+    roundRect(ctx, x, y, cell, cell, cell * 0.14);
     ctx.fill();
-    ctx.stroke();
+    ctx.restore();
+    if (!isWin) {
+      ctx.strokeStyle = BORDER;
+      ctx.lineWidth = 2;
+      roundRect(ctx, x, y, cell, cell, cell * 0.14);
+      ctx.stroke();
+    }
     const value = squares[i];
     if (value) {
       ctx.fillStyle = isWin ? PAPER : value === 'X' ? X_INK : O_INK;
-      ctx.font = `${value === 'X' ? 'italic ' : ''}bold ${cell * 0.55}px Georgia, serif`;
+      ctx.font = `${value === 'X' ? 'italic ' : ''}bold ${cell * 0.58}px Georgia, serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(value, x + cell / 2, y + cell / 2 + cell * 0.03);
     }
+  }
+  ctx.restore();
+};
+
+// Deterministic celebratory sprinkle around the board (positions hand-placed
+// to frame the composition, never behind text)
+const CONFETTI_SPECKS = [
+  [128, 402, 16, X_INK, 0.5], [948, 372, 14, O_INK, -0.4], [176, 660, 12, INK, 0.2],
+  [918, 640, 18, X_INK, 0.9], [110, 528, 10, O_INK, 0], [962, 508, 10, INK, -0.7],
+  [206, 356, 10, O_INK, 0.6], [886, 742, 12, INK, 0.3], [150, 760, 14, O_INK, -0.5],
+  [930, 260, 12, X_INK, 0.1],
+];
+
+const drawConfetti = (ctx) => {
+  for (const [x, y, size, color, rot] of CONFETTI_SPECKS) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(-size / 2, -size / 2, size, size);
+    ctx.restore();
   }
 };
 
@@ -82,50 +115,75 @@ export const renderShareCard = ({ result, squares, winningLine, stats }) =>
     // Masthead: measure both halves so the combined title is truly centered
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
-    ctx.font = 'bold 64px Georgia, serif';
+    ctx.font = 'bold 52px Georgia, serif';
     const w1 = ctx.measureText('tic tac ').width;
-    ctx.font = 'italic bold 64px Georgia, serif';
+    ctx.font = 'italic bold 52px Georgia, serif';
     const w2 = ctx.measureText('two').width;
     const mastLeft = (SIZE - w1 - w2) / 2;
     ctx.fillStyle = INK;
-    ctx.font = 'bold 64px Georgia, serif';
-    ctx.fillText('tic tac ', mastLeft, 158);
+    ctx.font = 'bold 52px Georgia, serif';
+    ctx.fillText('tic tac ', mastLeft, 142);
     ctx.fillStyle = X_INK;
-    ctx.font = 'italic bold 64px Georgia, serif';
-    ctx.fillText('two', mastLeft + w1, 158);
+    ctx.font = 'italic bold 52px Georgia, serif';
+    ctx.fillText('two', mastLeft + w1, 142);
     ctx.textAlign = 'center';
 
-    // Headline
-    ctx.fillStyle = INK;
-    ctx.font = 'italic 500 78px Georgia, serif';
-    ctx.fillText(result === 'win' ? 'i won this one' : 'beat me if you can', SIZE / 2, 268);
-
-    drawBoard(ctx, squares, winningLine, SIZE / 2, 330, 470);
-
-    // Stats pill row
-    const parts = [];
-    if (stats.durationMs) parts.push(`won in ${formatDuration(stats.durationMs)}`);
-    if (stats.moves) parts.push(`${stats.moves} moves`);
-    if (stats.streak > 1) parts.push(`${stats.streak} win streak`);
-    if (result !== 'win' && parts.length) parts[0] = parts[0].replace('won in', 'played for');
-    const statsText = parts.join('   ·   ');
-    if (statsText) {
-      ctx.font = '42px Georgia, serif';
-      const w = ctx.measureText(statsText).width + 96;
+    // Headline: the poster moment. Winner gets a short punch with a red-ink
+    // full stop; loser gets the challenge line.
+    if (result === 'win') {
+      ctx.font = 'italic bold 150px Georgia, serif';
+      const hw = ctx.measureText('i won').width;
+      const dw = ctx.measureText('.').width;
+      const hx = (SIZE - hw - dw) / 2;
+      ctx.textAlign = 'left';
       ctx.fillStyle = INK;
-      roundRect(ctx, (SIZE - w) / 2, 840, w, 84, 42);
-      ctx.fill();
-      ctx.fillStyle = PAPER;
-      ctx.fillText(statsText, SIZE / 2, 896);
+      ctx.fillText('i won', hx, 310);
+      ctx.fillStyle = X_INK;
+      ctx.fillText('.', hx + hw, 310);
+      ctx.textAlign = 'center';
+    } else {
+      ctx.fillStyle = INK;
+      ctx.font = 'italic bold 92px Georgia, serif';
+      ctx.fillText('beat me if you can', SIZE / 2, 296);
     }
 
-    // Tagline + URL
-    ctx.fillStyle = MUTED;
-    ctx.font = 'italic 34px Georgia, serif';
-    ctx.fillText('tic-tac-toe where moves vanish', SIZE / 2, 956);
+    if (result === 'win') {
+      drawConfetti(ctx);
+    }
+    drawBoard(ctx, squares, winningLine, SIZE / 2, 570, 460, -0.035);
+
+    // Stats pill
+    const parts = [];
+    if (stats.durationMs) parts.push(`${result === 'win' ? 'won in' : 'played for'} ${formatDuration(stats.durationMs)}`);
+    if (stats.moves) parts.push(`${stats.moves} moves`);
+    if (stats.streak > 1) parts.push(`${stats.streak} win streak`);
+    const statsText = parts.join('  ·  ');
+    if (statsText) {
+      ctx.font = 'bold 40px Georgia, serif';
+      const w = ctx.measureText(statsText).width + 104;
+      ctx.fillStyle = INK;
+      roundRect(ctx, (SIZE - w) / 2, 856, w, 86, 43);
+      ctx.fill();
+      ctx.fillStyle = PAPER;
+      ctx.fillText(statsText, SIZE / 2, 912);
+    }
+
+    // One-line footer: bold URL, muted tagline, measured as a unit
+    const urlText = window.location.host;
+    const tagText = '  ·  tic-tac-toe where moves vanish';
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 32px Georgia, serif';
+    const uw = ctx.measureText(urlText).width;
+    ctx.font = 'italic 32px Georgia, serif';
+    const tw = ctx.measureText(tagText).width;
+    const fx = (SIZE - uw - tw) / 2;
     ctx.fillStyle = INK;
-    ctx.font = 'bold 34px Georgia, serif';
-    ctx.fillText(window.location.host, SIZE / 2, SIZE - 76);
+    ctx.font = 'bold 32px Georgia, serif';
+    ctx.fillText(urlText, fx, SIZE - 92);
+    ctx.fillStyle = MUTED;
+    ctx.font = 'italic 32px Georgia, serif';
+    ctx.fillText(tagText, fx + uw, SIZE - 92);
+    ctx.textAlign = 'center';
 
     canvas.toBlob((blob) => resolve(blob), 'image/png');
   });
