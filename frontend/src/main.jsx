@@ -3,8 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 // import './styles/index.css';
 
-
-if (process.env.NODE_ENV === 'production') {
+if (import.meta.env.PROD) {
   console.log = () => {};
 }
 

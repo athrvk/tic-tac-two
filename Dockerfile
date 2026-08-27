@@ -1,19 +1,20 @@
 # Dockerfile - Optimized for GitHub Actions
 # Build frontend
-FROM node:18-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /app/frontend
 
 # Copy package files first for better caching
 COPY frontend/package*.json ./
-RUN npm ci --only=production --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 # Copy source files and build
+COPY frontend/index.html frontend/vite.config.mjs ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 RUN npm run build
 
 # Build backend
-FROM maven:3.9-eclipse-temurin-17-alpine AS backend-build
+FROM maven:3.9-eclipse-temurin-25-alpine AS backend-build
 WORKDIR /app/backend
 
 # Copy pom.xml first for dependency caching
@@ -28,7 +29,7 @@ COPY backend/src ./src
 RUN mvn clean package -B -DskipTests
 
 # Final runtime image
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 
 # Create non-root user for security
 RUN groupadd -r appgroup && \
@@ -37,7 +38,17 @@ RUN groupadd -r appgroup && \
 WORKDIR /app
 
 # Copy jar with specific name for better caching
-COPY --from=backend-build --chown=appuser:appgroup /app/backend/target/*.jar ./app.jar
+COPY --from=backend-build /app/backend/target/*.jar ./app.jar
+
+# Extract into CDS-friendly layout, then do a training run to produce the
+# AppCDS archive (spring.context.exit=onRefresh stops the app right after
+# the context refreshes, before it starts listening)
+RUN java -Djarmode=tools -jar app.jar extract --destination application
+RUN java -XX:ArchiveClassesAtExit=application/application.jsa \
+    -Dspring.context.exit=onRefresh \
+    -jar application/app.jar
+
+RUN chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser
@@ -45,11 +56,12 @@ USER appuser
 # Expose port
 EXPOSE 10000
 
-# Optimize JVM for containers
+# Optimize JVM for containers; SharedArchiveFile cuts cold-start roughly in half
 ENTRYPOINT ["java", \
+    "-XX:SharedArchiveFile=application/application.jsa", \
     "-XX:+UseContainerSupport", \
     "-XX:MaxRAMPercentage=75.0", \
     "-Djava.security.egd=file:/dev/./urandom", \
     "-Dspring.profiles.active=prod", \
     "-jar", \
-    "app.jar"]
+    "application/app.jar"]

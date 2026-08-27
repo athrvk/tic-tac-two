@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** - when a 7th move is made, the oldest move disappears. Java 17 / Spring Boot 2.7.5 backend, React 18 (Create React App) frontend, deployed on Render via Docker. No database - all game state is in-memory.
+Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** - when a 7th move is made, the oldest move disappears. Java 25 (LTS) / Spring Boot 3.5 backend, React 19 (Vite) frontend, deployed on Render via Docker. No database - all game state is in-memory.
 
 ## Commands
 
@@ -19,10 +19,8 @@ mvn test -Dtest=ClassName # Run a single test class
 ### Frontend (from `frontend/`)
 ```bash
 npm install
-npm start                 # Dev server on port 3000 (expects backend on localhost:8080)
-npm test                  # Jest via react-scripts (watch mode); use -- --watchAll=false for one-shot
-npm test -- Board         # Run tests matching a name pattern
-npm run build             # Production build
+npm start                 # Vite dev server on port 3000 (expects backend on localhost:8080)
+npm run build             # Production build (outputs to build/)
 npm run prebuildlocal && npm run buildlocal  # Build and copy into backend/src/main/resources/static
 ```
 
@@ -46,7 +44,7 @@ All gameplay flows over a single WebSocket endpoint `/ws` (SockJS fallback enabl
 
 **Identity:** there is no auth. The frontend generates a random username (`unique-username-generator`) and sends it as a STOMP `CONNECT` header; a `ChannelInterceptor` in `WebSocketConfig` turns it into the session `Principal`, which is what `convertAndSendToUser` and the user registry key off. Usernames prefixed `status_monitor_` are status-page watchers and are excluded from player counts.
 
-**Scheduled broadcasts** in `GameController`: active player count to `/topic/public` every 2s, all-rooms state to `/topic/status` every 750ms.
+**Scheduled broadcasts** in `GameController`: active player count to `/topic/public` every 2s, all-rooms state to `/topic/status` every 2s.
 
 ### Game logic is client-authoritative
 The backend does **not** validate moves or detect winners. The frontend (`App.js` + `utils/helper.js:calculateWinner`) applies the move, enforces the 6-move cap (`history.length > 6` → remove oldest square), computes the winner, and publishes the complete new state to `/app/updateGameState`; the backend stores it in `GameService`'s `ConcurrentHashMap` and rebroadcasts it verbatim to the room. Changes to game rules therefore live in the frontend; the backend `GameState` model just mirrors squares/history/xIsNext.
@@ -59,7 +57,11 @@ The backend does **not** validate moves or detect winners. The frontend (`App.js
 - `utils/websocket.js` - singleton `webSocketService` wrapping @stomp/stompjs
 - `utils/analytics.js` - GA event tracking, called throughout the game flow
 - `styles/theme.js` + styled-components - high-contrast, e-ink-friendly palette (black on #f6f6f6, Georgia serif); use theme spacing values (xs/sm/md/lg) and keep components mobile-friendly
-- `console.log` is stripped in production builds (`index.js`)
+- `console.log` is stripped in production builds by the Vite build config
+
+## Testing
+
+- `e2e/` holds a Playwright end-to-end suite that drives the built app; CI runs it via `.github/workflows/e2e.yml` on pushes/PRs to `master`.
 
 ## Conventions
 
