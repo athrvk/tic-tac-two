@@ -215,7 +215,11 @@ export const shareCardImage = async (blob, { text, url, fallback = 'download' })
   const file = new File([blob], 'tic-tac-two-victory.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], text, url });
+      // On Android, share targets receiving files only reliably read `text`;
+      // the separate `url` member gets dropped, so fold the url into text
+      // while still passing `url` for platforms that do honor it
+      const shareText = text && url ? `${text} ${url}` : text;
+      await navigator.share({ files: [file], text: shareText, url });
       return 'shared';
     } catch (err) {
       if (err && err.name === 'AbortError') {

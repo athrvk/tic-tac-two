@@ -118,6 +118,7 @@ test('win on a file-share-capable device hands the card to the native share shee
   const shared = await a.evaluate(() => window.__shared);
   expect(shared.files).toHaveLength(1);
   expect(shared.files[0].type).toBe('image/png');
+  expect(shared.text).toContain('http');
 
   const opened = await a.evaluate(() => window.__opened);
   expect(opened).toEqual([]);
