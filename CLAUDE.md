@@ -37,24 +37,26 @@ CI (`.github/workflows/docker-image.yml`) builds/pushes the Docker image and tri
 ### Big picture
 Two apps in one repo. In development they run separately (frontend :3000, backend :8080, frontend hardcodes `localhost:8080` for the socket in non-production). In production the frontend build is baked into Spring Boot's `static/` resources during the Docker build and served same-origin on port 10000 (profile `prod`, `application-prod.properties`).
 
-### Real-time communication (STOMP over SockJS)
-All gameplay flows over a single WebSocket endpoint `/ws` (SockJS fallback enabled). Destinations, configured in `backend/.../config/WebSocketConfig.java`:
-- Client → server: `/app/createRoom`, `/app/joinRoom`, `/app/updateGameState` (handled by `@MessageMapping` methods in `GameController`)
-- Server → clients: `/topic/public` (room-created + active-player-count broadcasts), `/topic/room/{roomId}` (per-room game events), `/topic/status` (status page feed), `/user/queue/join` (join confirmation with assigned symbol and current state)
+### Real-time communication (raw WebSocket, JSON protocol)
+All gameplay flows over a single native WebSocket endpoint `/ws` (no STOMP, no SockJS - removed deliberately; there is no long-polling fallback). `WebSocketConfig` registers `backend/.../websocket/GameWebSocketHandler.java`, which owns the whole protocol:
+- Client → server messages (`type` field): `create`, `join`, `move` (carries a client-generated `moveId` plus the full `gameState`), `ping`
+- Server → client messages: `room_created` (to the creator only), `room_joined` (join confirmation with assigned symbol and current state), `player_joined`, `game_state` (room broadcast), `ack` (echoes `moveId` after the move is validated and applied), `player_disconnected`, `active_players`, `status_update` (status page feed), `pong`
 
-**Identity:** there is no auth. The frontend generates a random username (`unique-username-generator`) and sends it as a STOMP `CONNECT` header; a `ChannelInterceptor` in `WebSocketConfig` turns it into the session `Principal`, which is what `convertAndSendToUser` and the user registry key off. Usernames prefixed `status_monitor_` are status-page watchers and are excluded from player counts.
+**Identity:** there is no auth. The frontend generates a random username (`unique-username-generator`) and passes it as the `?username=` query parameter on the `/ws` URL. Connections with `?type=status` are status-page watchers and are excluded from player counts.
 
-**Scheduled broadcasts** in `GameController`: active player count to `/topic/public` every 2s, all-rooms state to `/topic/status` every 2s.
+**Liveness:** the client pings every 3s and force-closes after 10s of silence; the handler tracks last-seen per session and a 3s sweeper closes dead sessions, which triggers the same cleanup as a normal disconnect (opponent gets `player_disconnected` → forfeit win). On reconnect the client re-joins its room and takes the server's authoritative state.
+
+**Scheduled broadcasts** in `GameWebSocketHandler`: active player count to all players every 2s, all-rooms state to status watchers every 2s.
 
 ### Game logic is client-authoritative
-The backend does **not** validate moves or detect winners. The frontend (`App.js` + `utils/helper.js:calculateWinner`) applies the move, enforces the 6-move cap (`history.length > 6` → remove oldest square), computes the winner, and publishes the complete new state to `/app/updateGameState`; the backend stores it in `GameService`'s `ConcurrentHashMap` and rebroadcasts it verbatim to the room. Changes to game rules therefore live in the frontend; the backend `GameState` model just mirrors squares/history/xIsNext.
+The backend does **not** apply game rules or detect winners (it does validate the shape of the state: 9 squares of null/X/O, at most 6 history entries). The frontend (`App.jsx` + `utils/helper.js:calculateWinner`) applies the move, enforces the 6-move cap (`history.length > 6` → remove oldest square), computes the winner, and sends the complete new state in a `move` message; the backend stores it in `GameService`'s `ConcurrentHashMap`, acks the `moveId` back to the sender, and rebroadcasts the state to the room. The client renders its own move optimistically and rolls it back if no ack arrives within 2.5s. Changes to game rules therefore live in the frontend; the backend `GameState` model just mirrors squares/history/xIsNext.
 
 ### Room lifecycle (`GameService`)
-`joinRoom` is forgiving: joining with no room ID finds any one-player room or creates one; joining a full/nonexistent room silently creates a new room and puts the player there (the client detects `assignedRoomId !== desiredRoomId`). First player in a room gets X, second gets O. `WebSocketEventListener` cleans up player/room mappings on disconnect.
+`joinRoom` is forgiving: joining with no room ID finds any one-player room or creates one; joining a full/nonexistent room silently creates a new room and puts the player there (the client detects `assignedRoomId !== desiredRoomId`). First player in a room gets X, second gets O. `GameWebSocketHandler.afterConnectionClosed` (and the liveness sweeper) cleans up player/room mappings on disconnect. Generated room codes are short 6-char strings; codes are case-insensitive.
 
 ### Frontend structure
-- `App.js` - nearly all game/connection state lives here; routes `/` (game) and `/status` (live dashboard using `utils/statusWebsocket.js` with a separate connection)
-- `utils/websocket.js` - singleton `webSocketService` wrapping @stomp/stompjs
+- `App.jsx` - nearly all game/connection state lives here; routes `/` (game) and `/status` (live dashboard using `utils/statusWebsocket.js` with a separate connection)
+- `utils/websocket.js` - singleton `webSocketService` speaking the raw JSON protocol (connect, heartbeat, reconnect + room re-join, move acks)
 - `utils/analytics.js` - GA event tracking, called throughout the game flow
 - `styles/theme.js` + styled-components - high-contrast, e-ink-friendly palette (black on #f6f6f6, Georgia serif); use theme spacing values (xs/sm/md/lg) and keep components mobile-friendly
 - `console.log` is stripped in production builds by the Vite build config
