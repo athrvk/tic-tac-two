@@ -44,7 +44,8 @@ public class GameController {
             logger.warn("createRoom request without a principal, ignoring");
             return;
         }
-        String requestedRoomId = (String) payload.get("roomId");
+        // Codes are case-insensitive, like every party game's join code
+        String requestedRoomId = normalizeRoomId((String) payload.get("roomId"));
         String roomId = (requestedRoomId != null && !requestedRoomId.isEmpty())
                 ? gameService.createRoom(requestedRoomId)
                 : gameService.createRoom();
@@ -68,7 +69,7 @@ public class GameController {
             logger.warn("joinRoom request without a principal, ignoring");
             return;
         }
-        String desiredRoomId = (String) payload.get("roomId");
+        String desiredRoomId = normalizeRoomId((String) payload.get("roomId"));
         String username = principal.getName();
         JoinRoomResponse response = gameService.joinRoom(desiredRoomId, username);
         String assignedRoomId = response.getRoomId();
@@ -97,6 +98,10 @@ public class GameController {
         // Notify other players in the room
         messagingTemplate.convertAndSend("/topic/room/" + assignedRoomId,
                 Map.of("type", "player_joined", "roomId", assignedRoomId, "isRoomFull", isRoomFull));
+    }
+
+    private static String normalizeRoomId(String roomId) {
+        return roomId == null ? null : roomId.toLowerCase();
     }
 
     /**

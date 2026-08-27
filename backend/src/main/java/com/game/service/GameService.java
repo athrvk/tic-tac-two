@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import com.game.model.GameState;
 
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,19 +15,31 @@ public class GameService {
 
     private static final Logger logger = LoggerFactory.getLogger(GameService.class);
 
+    // Short, speakable codes: no ambiguous characters (0/o, 1/l/i)
+    private static final String CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+    private static final int CODE_LENGTH = 6;
+    private static final SecureRandom CODE_RANDOM = new SecureRandom();
+
     // Stores roomId to game state mapping
     private final Map<String, GameState> rooms = new ConcurrentHashMap<>();
     // Stores username to roomId mapping
     private final Map<String, String> playerRoomMap = new ConcurrentHashMap<>();
 
     /**
-     * Creates a new game room with a unique ID.
+     * Creates a new game room with a short generated code (instead of a UUID,
+     * so random-match rooms are as speakable and typeable as user-chosen ones).
      *
      * @return the generated room ID
      */
     public String createRoom() {
-        String roomId = UUID.randomUUID().toString();
-        rooms.put(roomId, new GameState());
+        String roomId;
+        do {
+            StringBuilder code = new StringBuilder(CODE_LENGTH);
+            for (int i = 0; i < CODE_LENGTH; i++) {
+                code.append(CODE_CHARS.charAt(CODE_RANDOM.nextInt(CODE_CHARS.length())));
+            }
+            roomId = code.toString();
+        } while (rooms.putIfAbsent(roomId, new GameState()) != null);
         logger.info("Created new room with ID: {}", roomId);
         return roomId;
     }

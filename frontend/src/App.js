@@ -359,6 +359,15 @@ function GamePage() {
     trackInviteShared(result, isRoomFull ? 'in_game' : 'waiting');
   };
 
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomId);
+      showMessage('code copied');
+    } catch (err) {
+      showMessage('copy failed, long-press the code instead');
+    }
+  };
+
   const handleShareResult = async () => {
     const didWin = gameWinner && gameWinner.winner === playerSymbol;
     const text = didWin
@@ -435,12 +444,12 @@ function GamePage() {
                   <GameInfo>
                     <WaitingDots>waiting for an opponent</WaitingDots>
                   </GameInfo>
-                  <Label>room code</Label>
-                  <RoomCode>{roomId}</RoomCode>
                   <Button onClick={handleInviteFriend}>invite a friend</Button>
                   <RuleHint>
                     send the link, the game starts the moment they open it
                   </RuleHint>
+                  <MutedNote>or tell them the room code</MutedNote>
+                  <RoomCode onClick={handleCopyCode} title="click to copy">{roomId}</RoomCode>
                 </>
               ) : (
                 <>

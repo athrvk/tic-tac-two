@@ -78,20 +78,27 @@ export const RuleHint = styled.p`
   color: ${props => props.theme.colors.muted};
 `;
 
-export const RoomCode = styled.div`
-  font-size: 1.5rem;
+// Compact, click-to-copy chip: the invite link is the primary share path,
+// the code is the fallback you read out loud (Among Us style), not a headline
+export const RoomCode = styled.button`
+  font-family: ${props => props.theme.typography.fontFamily};
+  font-size: 1.1rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-align: center;
-  padding: ${props => props.theme.spacing.sm} ${props => props.theme.spacing.lg};
+  padding: ${props => props.theme.spacing.xs} ${props => props.theme.spacing.md};
   border: 1.5px dashed ${props => props.theme.colors.mediumGray};
-  border-radius: 12px;
+  border-radius: 999px;
   background: ${props => props.theme.colors.surface};
+  color: ${props => props.theme.colors.text};
+  cursor: pointer;
   overflow-wrap: anywhere;
   max-width: 90vw;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
-  @media (max-width: 768px) {
-    font-size: 1.25rem;
+  &:hover {
+    border-color: ${props => props.theme.colors.primary};
+    background: ${props => props.theme.colors.hover};
   }
 `;
 
