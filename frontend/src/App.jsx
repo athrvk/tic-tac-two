@@ -701,6 +701,35 @@ function GamePage() {
       whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${gameUrl}`)}`,
       threads: `https://www.threads.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
     };
+    if (canShareFiles) {
+      // Mobile first: hand the card straight to the native share sheet so
+      // the app the user picks gets the image attached directly, the
+      // standard mobile share flow. No intent URL, no clipboard.
+      try {
+        const blob = await renderShareCard({
+          result: didWin ? 'win' : 'lose',
+          squares,
+          winningLine: gameWinner && gameWinner.line,
+          stats: {
+            durationMs: gameDurationRef.current,
+            moves: gameMovesRef.current,
+            streak: didWin ? streakRef.current : 0,
+          },
+        });
+        const result = await shareCardImage(blob, { text: shareText, url: gameUrl, fallback: 'none' });
+        if (result === 'failed') {
+          // sharing failed outright, fall back to the intent URL so the tap
+          // still does something
+          window.open(intents[channel], '_blank', 'noopener');
+        }
+        // 'dismissed' needs no follow up, the user chose to back out
+      } catch (err) {
+        window.open(intents[channel], '_blank', 'noopener');
+      }
+      trackResultShared(channel, didWin ? 'win' : 'lose');
+      return;
+    }
+
     if (channel === 'x' || channel === 'threads') {
       // Open synchronously on the click's user-activation, before any await,
       // or popup blockers will swallow it.

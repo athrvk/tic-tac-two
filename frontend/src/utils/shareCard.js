@@ -206,7 +206,12 @@ export const copyCardToClipboard = async (blob) => {
   }
 };
 
-export const shareCardImage = async (blob, { text, url }) => {
+// fallback: 'download' (default, used by the share-card button) saves the
+// PNG locally when navigator.share is unavailable or throws a non-abort
+// error; 'none' (used by the share chips) skips that and just reports
+// 'failed', so the caller can fall back to opening the channel's intent URL
+// instead of silently starting a download the user didn't ask for.
+export const shareCardImage = async (blob, { text, url, fallback = 'download' }) => {
   const file = new File([blob], 'tic-tac-two-victory.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
@@ -216,8 +221,11 @@ export const shareCardImage = async (blob, { text, url }) => {
       if (err && err.name === 'AbortError') {
         return 'dismissed';
       }
-      // fall through to download
+      // fall through to download (or report failed, per `fallback`)
     }
+  }
+  if (fallback === 'none') {
+    return 'failed';
   }
   try {
     const link = document.createElement('a');
