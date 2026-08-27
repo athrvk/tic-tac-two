@@ -65,6 +65,14 @@ class WebSocketService {
             this.onJoinRoomCallback(data);
           }
         });
+        // Room creation confirmations are sent only to the creator
+        this.client.subscribe(`/user/queue/roomCreated`, (message) => {
+          const data = JSON.parse(message.body);
+          console.log(`[/user/queue/roomCreated] - Received message:`, data);
+          if (this.onMessageCallback) {
+            this.onMessageCallback(data);
+          }
+        });
         if (this.onConnectCallback) {
           this.onConnectCallback();
         }
