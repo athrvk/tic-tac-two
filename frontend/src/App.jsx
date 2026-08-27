@@ -6,11 +6,22 @@ import { webSocketService } from './utils/websocket';
 import { generateUsername } from 'unique-username-generator';
 import { theme } from './styles/theme';
 import { Container } from './components/UI/Container';
-import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup, OrDivider, Tagline, RuleHint, RoomCode, WaitingDots, MutedNote } from './components/UI/Misc';
-import { Input, Button, Label } from './components/UI/Input';
+import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButtonGroup, OrDivider, Tagline, RuleHint, RoomCode, WaitingDots, MutedNote, ShareRow } from './components/UI/Misc';
+import { Input, Button, Label, ChipButton } from './components/UI/Input';
 import GlobalStyle from './styles/GlobalStyle';
 import { calculateWinner } from './utils/helper';
-import { buildInviteLink, shareLink, shareOrCopy, sanitizeRoomCode } from './utils/share';
+import { buildInviteLink, shareLink, sanitizeRoomCode } from './utils/share';
+
+// Whether this platform can hand an image file to the native share sheet
+// (phones: yes, which is the only way into Instagram; desktops: download)
+const canShareFiles = (() => {
+  try {
+    const probe = new File([''], 'probe.png', { type: 'image/png' });
+    return !!(navigator.canShare && navigator.canShare({ files: [probe] }));
+  } catch (err) {
+    return false;
+  }
+})();
 import { renderShareCard, shareCardImage } from './utils/shareCard';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
@@ -54,7 +65,7 @@ function GamePage() {
   // Truncation can leave a trailing separator, which reads as a typo.
   // Persisted per-tab so a page refresh keeps the same identity (the server
   // can then treat the reconnect as the same player instead of a new one).
-  const [username] = useState(() => {
+  const [username, setUsername] = useState(() => {
     try {
       const saved = sessionStorage.getItem('ttt_username');
       if (saved) return saved;
@@ -121,6 +132,8 @@ function GamePage() {
   // Tracks the pending auto-clear so a new message can't be wiped early by
   // a stale timeout from a previous message
   const messageTimer = useRef(null);
+  // In-flight guard for the share card render/share
+  const sharingCardRef = useRef(false);
 
   const showMessage = (text, ms = 4000) => {
     setMessage(text);
@@ -204,6 +217,18 @@ function GamePage() {
   }, [playerSymbol, xIsNext]);
 
   const handleReceiveMessage = (data) => {
+    if (data.type === 'welcome' && data.username && data.username !== username) {
+      // The server renamed this tab (duplicated-tab identity): adopt the new
+      // name. Changing state reconnects once under it; allow the invite-link
+      // auto-join to run again on that fresh connection.
+      hasAutoJoinedRef.current = false;
+      try {
+        sessionStorage.setItem('ttt_username', data.username);
+      } catch (err) {
+        // per-tab persistence unavailable; the in-memory name still updates
+      }
+      setUsername(data.username);
+    }
     if (data.type === 'rooms') {
       setAvailableRooms(data.rooms);
     }
@@ -480,15 +505,29 @@ function GamePage() {
     }
   };
 
-  const handleShareResult = async () => {
-    const didWin = gameWinner && gameWinner.winner === playerSymbol;
-    const url = `${window.location.origin}${window.location.pathname}`;
-    const text = didWin
-      ? 'i just won at tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
-      : 'i just played tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
+  const didWin = gameWinner && gameWinner.winner === playerSymbol;
+  const gameUrl = `${window.location.origin}${window.location.pathname}`;
+  const shareText = didWin
+    ? 'i just won at tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
+    : 'i just played tic-tac-two: tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
+
+  // One-tap platform shares: pre-filled intents, the OG card rides along on
+  // the link unfurl. Instagram has no web share URL, so the card button's
+  // native sheet is the only route there.
+  const handleShareIntent = (channel) => {
+    const intents = {
+      x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(gameUrl)}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(gameUrl)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} ${gameUrl}`)}`,
+    };
+    window.open(intents[channel], '_blank', 'noopener');
+    trackResultShared(channel, didWin ? 'win' : 'lose');
+  };
+
+  const handleShareCard = async () => {
+    if (sharingCardRef.current) return; // double-taps produced duplicate files
+    sharingCardRef.current = true;
     try {
-      // A branded card with the final board and stats: shareable straight
-      // into X/Instagram/FB on phones, downloaded as a PNG on desktop
       const blob = await renderShareCard({
         result: didWin ? 'win' : 'lose',
         squares,
@@ -499,17 +538,17 @@ function GamePage() {
           streak: didWin ? streakRef.current : 0,
         },
       });
-      const result = await shareCardImage(blob, { text, url });
+      const result = await shareCardImage(blob, { text: shareText, url: gameUrl });
       if (result === 'shared') showMessage('shared!');
-      if (result === 'downloaded') showMessage('victory card saved, post it anywhere', 6000);
-      if (result === 'failed') throw new Error('card share failed');
+      if (result === 'downloaded') showMessage('card saved, post it anywhere', 6000);
+      if (result === 'failed') showMessage('could not create the card, try again');
       trackResultShared(`card_${result}`, didWin ? 'win' : 'lose');
-    } catch (err) {
-      // Text-only fallback if the canvas or share/download path breaks
-      const result = await shareOrCopy({ title: 'tic-tac-two', text, url });
-      if (result === 'shared') showMessage('shared!');
-      if (result === 'copied') showMessage('copied, paste it anywhere!');
-      trackResultShared(result, didWin ? 'win' : 'lose');
+    } finally {
+      // Cooldown rather than plain unlock: rendering is fast enough that an
+      // accidental double-click would otherwise produce two files
+      setTimeout(() => {
+        sharingCardRef.current = false;
+      }, 1500);
     }
   };
 
@@ -622,12 +661,20 @@ function GamePage() {
                 </>
               )}
               {gameWinner && (
-                <RoomControlsButtonGroup>
-                  <Button onClick={handleNewGame}>new match</Button>
-                  <Button onClick={handleShareResult}>
-                    {gameWinner.winner === playerSymbol ? 'brag about it' : 'share game'}
-                  </Button>
-                </RoomControlsButtonGroup>
+                <>
+                  <RoomControlsButtonGroup>
+                    <Button onClick={handleNewGame}>new match</Button>
+                    <Button onClick={handleShareCard}>
+                      {canShareFiles ? 'share card' : 'save card'}
+                    </Button>
+                  </RoomControlsButtonGroup>
+                  <MutedNote>{didWin ? 'brag about it on' : 'find a challenger on'}</MutedNote>
+                  <ShareRow>
+                    <ChipButton onClick={() => handleShareIntent('x')}>share on x</ChipButton>
+                    <ChipButton onClick={() => handleShareIntent('facebook')}>facebook</ChipButton>
+                    <ChipButton onClick={() => handleShareIntent('whatsapp')}>whatsapp</ChipButton>
+                  </ShareRow>
+                </>
               )}
             </>
           )}

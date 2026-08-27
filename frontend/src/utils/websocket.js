@@ -122,6 +122,14 @@ class WebSocketService {
 
   _dispatch(data) {
     switch (data.type) {
+      case 'welcome':
+        // The server may rename a duplicated-tab identity; adopt it so
+        // reconnects and sends use the effective username
+        if (data.username) {
+          this.username = encodeURIComponent(data.username);
+        }
+        if (this.onMessageCallback) this.onMessageCallback(data);
+        break;
       case 'room_created':
       case 'active_players':
         if (this.onMessageCallback) this.onMessageCallback(data);

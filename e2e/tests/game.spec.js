@@ -65,8 +65,10 @@ test('win shows the filled line and share buttons for both players', async ({ br
 
   await a.waitForSelector('text=you win', { timeout: 10000 });
   await b.waitForSelector('text=you lose', { timeout: 10000 });
-  await a.waitForSelector('text=brag about it', { timeout: 5000 });
-  await b.waitForSelector('text=share game', { timeout: 5000 });
+  await a.waitForSelector('text=save card', { timeout: 5000 });
+  await a.waitForSelector('text=share on x', { timeout: 5000 });
+  await b.waitForSelector('text=save card', { timeout: 5000 });
+  await b.waitForSelector('text=share on x', { timeout: 5000 });
 
   await ctxA.close();
   await ctxB.close();

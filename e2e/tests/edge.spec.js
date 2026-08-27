@@ -64,6 +64,35 @@ test('mid-game refresh resumes the same game without a forfeit', async ({ browse
   await ctxB.close();
 });
 
+test('a duplicated tab (cloned sessionStorage identity) gets its own seat', async ({ browser }) => {
+  const room = uniqueRoom('dupid');
+  const ctx = await browser.newContext();
+  // Both pages carry the same per-tab identity, as tab duplication does
+  await ctx.addInitScript(() => {
+    try { sessionStorage.setItem('ttt_username', 'dup-identity-e2e'); } catch (err) {}
+  });
+  const p1 = await ctx.newPage();
+  const p2 = await ctx.newPage();
+
+  await createRoom(p1, room);
+  await joinRoom(p2, room);
+  await p1.waitForSelector('text=you are', { timeout: 15000 });
+
+  // The server must have renamed one tab so they hold distinct seats
+  const symbol = (p) => p.evaluate(() => (document.body.innerText.match(/you are\s*(X|O)/) || [])[1] || null);
+  const s1 = await symbol(p1);
+  const s2 = await symbol(p2);
+  expect([s1, s2].sort()).toEqual(['O', 'X']);
+
+  // And they can actually play each other
+  const xPage = s1 === 'X' ? p1 : p2;
+  const oPage = s1 === 'X' ? p2 : p1;
+  await playMoves([[xPage, 4]]);
+  await expect.poll(async () => (await boardState(oPage))[4]).toBe('X');
+
+  await ctx.close();
+});
+
 test('waiting-screen refresh keeps the room and its invite link alive', async ({ browser }) => {
   const room = uniqueRoom('waitref');
   const ctx = await browser.newContext();
