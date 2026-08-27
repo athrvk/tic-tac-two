@@ -11,6 +11,7 @@ import { Controls, RoomControls, GameInfo, Message, TurnInfo, RoomControlsButton
 import { Input, Button, Label } from './components/UI/Input';
 import GlobalStyle from './styles/GlobalStyle';
 import { calculateWinner } from './utils/helper';
+import { buildInviteLink, shareOrCopy } from './utils/share';
 import Header from './components/UI/Header';
 import Footer from './components/UI/Footer';
 import Confetti from 'react-confetti';
@@ -27,7 +28,9 @@ import {
   startGameTimer,
   getGameDuration,
   incrementSessionGameCount,
-  getGameProgress
+  getGameProgress,
+  trackInviteShared,
+  trackResultShared
 } from './utils/analytics';
 
 
@@ -57,6 +60,16 @@ function GamePage() {
   }, [isCreatingRoom]);
 
   useEffect(() => {
+    // Invite links carry the room code as ?room=..., join automatically once connected
+    const urlRoom = new URLSearchParams(window.location.search).get('room');
+    if (urlRoom) {
+      setInputRoomId(urlRoom);
+      webSocketService.setOnConnectCallback(() => {
+        webSocketService.joinRoom(urlRoom);
+        setMessage('joining game...');
+        trackGameStartIntent('invite_link');
+      });
+    }
     webSocketService.connect(username);
     webSocketService.setOnMessageCallback(handleReceiveMessage);
     webSocketService.setOnJoinRoomCallback(handleJoinRoomResponse); // Set join room callback
@@ -111,6 +124,8 @@ function GamePage() {
       setMessage(`joined room: ${data.roomId}`);
       setTimeout(() => setMessage(''), 4000);
       setIsCreatingRoom(false);
+      // Keep the room code in the URL so the address bar itself is a shareable invite
+      window.history.replaceState(null, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomId)}`);
 
       // Track room joined event
       const joinMethod = inputRoomId.trim() ? 'room_code' : 'random_match';
@@ -169,6 +184,7 @@ function GamePage() {
         }
 
         setTimeout(() => {
+          window.history.replaceState(null, '', window.location.pathname);
           window.location.reload();
         }, 3000);
       }
@@ -271,6 +287,35 @@ function GamePage() {
     });
   }
 
+  const handleInviteFriend = async () => {
+    const result = await shareOrCopy({
+      title: 'tic-tac-two',
+      text: 'play tic-tac-two with me — tic-tac-toe where your moves vanish. join my room:',
+      url: buildInviteLink(roomId),
+    });
+    if (result === 'shared') setMessage('invite sent!');
+    if (result === 'copied') setMessage('invite link copied!');
+    if (result === 'failed') setMessage(buildInviteLink(roomId));
+    setTimeout(() => setMessage(''), 6000);
+    trackInviteShared(result, isRoomFull ? 'in_game' : 'waiting');
+  };
+
+  const handleShareResult = async () => {
+    const didWin = gameWinner && gameWinner.winner === playerSymbol;
+    const text = didWin
+      ? 'i just won at tic-tac-two — tic-tac-toe where your moves vanish after 6 turns. think you can beat me?'
+      : 'i just played tic-tac-two — tic-tac-toe where your moves vanish after 6 turns. it gets tricky, try it:';
+    const result = await shareOrCopy({
+      title: 'tic-tac-two',
+      text,
+      url: `${window.location.origin}${window.location.pathname}`,
+    });
+    if (result === 'shared') setMessage('shared!');
+    if (result === 'copied') setMessage('copied, paste it anywhere!');
+    setTimeout(() => setMessage(''), 4000);
+    trackResultShared(result, didWin ? 'win' : 'lose');
+  };
+
   const turnMessage = useMemo(() => {
     if (gameWinner) {
       return gameWinner.winner === playerSymbol ? 'you win' : 'you lose';
@@ -311,16 +356,19 @@ function GamePage() {
           ) : (
             <>
               {!isRoomFull ? (
-                <GameInfo>
-                  awaiting player...
-                  <br />
-                  {inputRoomId && (
-                    <span>
-                      room:&nbsp;
-                      <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
-                    </span>
-                  )}
-                </GameInfo>
+                <>
+                  <GameInfo>
+                    awaiting player...
+                    <br />
+                    {inputRoomId && (
+                      <span>
+                        room:&nbsp;
+                        <span style={{ fontWeight: '700', color: '#777' }}>{roomId}</span>
+                      </span>
+                    )}
+                  </GameInfo>
+                  <Button onClick={handleInviteFriend}>invite a friend</Button>
+                </>
               ) : (
                 <>
                   <GameInfo>
@@ -341,7 +389,12 @@ function GamePage() {
                 </>
               )}
               {gameWinner && (
-                <Button onClick={handleNewGame}>new match</Button>
+                <RoomControlsButtonGroup>
+                  <Button onClick={handleNewGame}>new match</Button>
+                  <Button onClick={handleShareResult}>
+                    {gameWinner.winner === playerSymbol ? 'brag about it' : 'share game'}
+                  </Button>
+                </RoomControlsButtonGroup>
               )}
             </>
           )}

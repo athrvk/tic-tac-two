@@ -95,6 +95,22 @@ export const trackRematchRequested = (previousResult) => {
   });
 };
 
+export const trackInviteShared = (method, context) => {
+  safeGtag('event', 'invite_shared', {
+    event_category: 'engagement',
+    method: method, // 'shared', 'copied', 'dismissed', 'failed'
+    context: context, // 'waiting', 'in_game'
+  });
+};
+
+export const trackResultShared = (method, gameResult) => {
+  safeGtag('event', 'result_shared', {
+    event_category: 'engagement',
+    method: method, // 'shared', 'copied', 'dismissed', 'failed'
+    game_result: gameResult, // 'win', 'lose'
+  });
+};
+
 export const trackSessionMilestone = (gamesPlayed, sessionDuration) => {
   safeGtag('event', 'session_milestone', {
     event_category: 'engagement',

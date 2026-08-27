@@ -1,0 +1,68 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Tic-Tac-Two is a real-time multiplayer Tic-Tac-Toe variant where **only the last 6 moves stay on the board** — when a 7th move is made, the oldest move disappears. Java 17 / Spring Boot 2.7.5 backend, React 18 (Create React App) frontend, deployed on Render via Docker. No database — all game state is in-memory.
+
+## Commands
+
+### Backend (from `backend/`)
+```bash
+mvn spring-boot:run       # Run locally on port 8080 (profile "local")
+mvn clean package         # Build JAR
+mvn test                  # Run tests (JUnit; no custom tests exist yet)
+mvn test -Dtest=ClassName # Run a single test class
+```
+
+### Frontend (from `frontend/`)
+```bash
+npm install
+npm start                 # Dev server on port 3000 (expects backend on localhost:8080)
+npm test                  # Jest via react-scripts (watch mode); use -- --watchAll=false for one-shot
+npm test -- Board         # Run tests matching a name pattern
+npm run build             # Production build
+npm run prebuildlocal && npm run buildlocal  # Build and copy into backend/src/main/resources/static
+```
+
+### Full application
+```bash
+docker-compose up --build             # Build & run everything
+docker build -t tic-tac-two .         # Multi-stage build (frontend → backend static → JRE image)
+```
+
+CI (`.github/workflows/docker-image.yml`) builds/pushes the Docker image and triggers a Render deploy on pushes to `master`.
+
+## Architecture
+
+### Big picture
+Two apps in one repo. In development they run separately (frontend :3000, backend :8080, frontend hardcodes `localhost:8080` for the socket in non-production). In production the frontend build is baked into Spring Boot's `static/` resources during the Docker build and served same-origin on port 10000 (profile `prod`, `application-prod.properties`).
+
+### Real-time communication (STOMP over SockJS)
+All gameplay flows over a single WebSocket endpoint `/ws` (SockJS fallback enabled). Destinations, configured in `backend/.../config/WebSocketConfig.java`:
+- Client → server: `/app/createRoom`, `/app/joinRoom`, `/app/updateGameState` (handled by `@MessageMapping` methods in `GameController`)
+- Server → clients: `/topic/public` (room-created + active-player-count broadcasts), `/topic/room/{roomId}` (per-room game events), `/topic/status` (status page feed), `/user/queue/join` (join confirmation with assigned symbol and current state)
+
+**Identity:** there is no auth. The frontend generates a random username (`unique-username-generator`) and sends it as a STOMP `CONNECT` header; a `ChannelInterceptor` in `WebSocketConfig` turns it into the session `Principal`, which is what `convertAndSendToUser` and the user registry key off. Usernames prefixed `status_monitor_` are status-page watchers and are excluded from player counts.
+
+**Scheduled broadcasts** in `GameController`: active player count to `/topic/public` every 2s, all-rooms state to `/topic/status` every 750ms.
+
+### Game logic is client-authoritative
+The backend does **not** validate moves or detect winners. The frontend (`App.js` + `utils/helper.js:calculateWinner`) applies the move, enforces the 6-move cap (`history.length > 6` → remove oldest square), computes the winner, and publishes the complete new state to `/app/updateGameState`; the backend stores it in `GameService`'s `ConcurrentHashMap` and rebroadcasts it verbatim to the room. Changes to game rules therefore live in the frontend; the backend `GameState` model just mirrors squares/history/xIsNext.
+
+### Room lifecycle (`GameService`)
+`joinRoom` is forgiving: joining with no room ID finds any one-player room or creates one; joining a full/nonexistent room silently creates a new room and puts the player there (the client detects `assignedRoomId !== desiredRoomId`). First player in a room gets X, second gets O. `WebSocketEventListener` cleans up player/room mappings on disconnect.
+
+### Frontend structure
+- `App.js` — nearly all game/connection state lives here; routes `/` (game) and `/status` (live dashboard using `utils/statusWebsocket.js` with a separate connection)
+- `utils/websocket.js` — singleton `webSocketService` wrapping @stomp/stompjs
+- `utils/analytics.js` — GA event tracking, called throughout the game flow
+- `styles/theme.js` + styled-components — high-contrast, e-ink-friendly palette (black on #f6f6f6, Georgia serif); use theme spacing values (xs/sm/md/lg) and keep components mobile-friendly
+- `console.log` is stripped in production builds (`index.js`)
+
+## Conventions
+
+- CORS/allowed origins come from the `ALLOWED_ORIGINS` property (`*` locally, the Render domain in prod); keep this in mind when touching `WebSocketConfig` or `WebConfig`.
+- Backend uses SLF4J logging and concurrent collections for shared state; several log statements are gated on the `local` profile to keep prod logs quiet.
+- When changing game logic or WebSocket behavior, test multiplayer with two browser sessions against a locally running backend.

@@ -8,6 +8,7 @@ class WebSocketService {
     this.connected = false;
     this.onMessageCallback = null;
     this.onJoinRoomCallback = null; // Add callback for join room
+    this.onConnectCallback = null; // Fired once the STOMP session is established
     this.connectionStartTime = null;
   }
 
@@ -64,6 +65,9 @@ class WebSocketService {
             this.onJoinRoomCallback(data);
           }
         });
+        if (this.onConnectCallback) {
+          this.onConnectCallback();
+        }
       },
       onDisconnect: (frame) => {
         this.connected = false;
@@ -128,6 +132,10 @@ class WebSocketService {
 
   setOnJoinRoomCallback(callback) { // Add method to set join room callback
     this.onJoinRoomCallback = callback;
+  }
+
+  setOnConnectCallback(callback) {
+    this.onConnectCallback = callback;
   }
 }
 
